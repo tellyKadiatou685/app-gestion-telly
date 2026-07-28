@@ -1,12 +1,11 @@
 // src/pages/SupervisorsPage.tsx
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Menu } from "lucide-react";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import userRoutes from "@/Routes/Userroutes";
 import TransactionService from "@/services/TransactionService";
+import AuthService from "@/services/Authservice";
 import type { User } from "@/Routes/Userroutes";
-import type { Period } from "@/types/transaction.types";
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -58,10 +57,9 @@ function timeAgo(iso?: string) {
   return new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 }
 function isPartnerKey(k: string) { return k.startsWith("part-"); }
-function partnerName(k: string) { return k.replace(/^part-/, ""); }
 function accountIcon(k: string) { return isPartnerKey(k) ? "🤝" : (ACCOUNT_ICONS[k] ?? "📦"); }
 function accountLabel(k: string) {
-  if (isPartnerKey(k)) return partnerName(k);
+  if (isPartnerKey(k)) return k.replace(/^part-/, "");
   return ({ LIQUIDE: "Liquide", WAVE: "Wave", ORANGE_MONEY: "Orange Money", UV_MASTER: "UV Master", AUTRES: "Autres" } as any)[k] ?? k;
 }
 function extractTxCount(d: DashboardData) {
@@ -119,6 +117,270 @@ function CopyCodeBtn({ code }: { code: string }) {
   );
 }
 
+// ─── MODAL MODIFIER SUPERVISEUR ───────────────────────────────────────────────
+
+function EditSupervisorModal({
+  sv, onClose, onSuccess,
+}: {
+  sv: SupervisorItem;
+  onClose: () => void;
+  onSuccess: (updated: Partial<User>) => void;
+}) {
+  const photoRef = useRef<HTMLInputElement>(null);
+  const [form, setForm] = useState({
+    nomComplet: sv.user.nomComplet ?? "",
+    telephone:  sv.user.telephone  ?? "",
+    adresse:    sv.user.adresse    ?? "",
+    code:       "",
+  });
+  const [photoFile,    setPhotoFile]    = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(sv.user.photo ?? null);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    if (photoRef.current) photoRef.current.value = "";
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true); setError(null);
+    try {
+      const payload: any = {};
+      if (form.nomComplet.trim() !== sv.user.nomComplet)              payload.nomComplet = form.nomComplet.trim();
+      if (form.telephone.trim()  !== sv.user.telephone)               payload.telephone  = form.telephone.trim();
+      if ((form.adresse.trim() || null) !== (sv.user.adresse ?? null)) payload.adresse   = form.adresse.trim() || null;
+      if (form.code.trim().length >= 4)                               payload.code       = form.code.trim();
+
+      // Photo : upload si nouveau fichier, null si supprimée
+      if (photoFile) {
+        const base64 = await new Promise<string>((res, rej) => {
+          const r = new FileReader();
+          r.onload  = () => res(r.result as string);
+          r.onerror = () => rej(new Error("Lecture échouée"));
+          r.readAsDataURL(photoFile);
+        });
+        payload.photo = base64;
+      } else if (photoPreview === null && sv.user.photo) {
+        payload.photo = null; // suppression de la photo
+      }
+
+      if (Object.keys(payload).length === 0) {
+        onClose(); return;
+      }
+
+      const result = await AuthService.updateUser(sv.user.id, payload);
+      onSuccess(result.user ?? payload);
+      onClose();
+    } catch (e: any) {
+      setError(e?.response?.data?.message || "Erreur lors de la modification");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,.55)", backdropFilter: "blur(3px)" }} onClick={onClose} />
+      <div style={{ position: "relative", background: "white", borderRadius: 18, width: "100%", maxWidth: 400, overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,.18)", border: "1.5px solid #e2e8f0", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg,#1e3a8a,#1d4ed8)", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,255,255,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>✏️</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "white" }}>Modifier le superviseur</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,.65)" }}>{sv.user.nomComplet}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,.18)", border: "none", color: "white", fontSize: 14, cursor: "pointer" }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 16, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+
+          {/* Photo */}
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>Photo</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {/* Preview */}
+              <div style={{ width: 56, height: 56, borderRadius: 12, overflow: "hidden", border: "2px solid #e2e8f0", flexShrink: 0, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+                {photoPreview
+                  ? <img src={photoPreview} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <span style={{ fontSize: 22 }}>👤</span>
+                }
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
+                {/* Bouton choisir */}
+                <button
+                  onClick={() => photoRef.current?.click()}
+                  style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontSize: 11, fontWeight: 700, cursor: "pointer", textAlign: "left" as const }}
+                >
+                  📁 {photoPreview ? "Changer la photo" : "Choisir une photo"}
+                </button>
+                {/* Bouton supprimer */}
+                {photoPreview && (
+                  <button
+                    onClick={handleRemovePhoto}
+                    style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid #fecdd3", background: "#fff1f2", color: "#e11d48", fontSize: 11, fontWeight: 700, cursor: "pointer", textAlign: "left" as const }}
+                  >
+                    🗑️ Supprimer la photo
+                  </button>
+                )}
+                <input
+                  ref={photoRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handleFile}
+                />
+                <span style={{ fontSize: 9, color: "#94a3b8" }}>JPG, PNG, WebP — max 5 Mo</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Champs texte */}
+          {[
+            { label: "Nom complet",  key: "nomComplet", type: "text",     icon: "👤", placeholder: "" },
+            { label: "Téléphone",    key: "telephone",  type: "tel",      icon: "📞", placeholder: "" },
+            { label: "Adresse",      key: "adresse",    type: "text",     icon: "📍", placeholder: "Optionnel" },
+            { label: "Nouveau code", key: "code",       type: "password", icon: "🔑", placeholder: "Laisser vide = inchangé" },
+          ].map(f => (
+            <div key={f.key}>
+              <div style={{ fontSize: 9, fontWeight: 800, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 4 }}>{f.label}</div>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12 }}>{f.icon}</span>
+                <input
+                  type={f.type}
+                  value={(form as any)[f.key]}
+                  onChange={e => setForm(x => ({ ...x, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                  style={{ width: "100%", padding: "8px 9px 8px 28px", border: "1.5px solid #e2e8f0", borderRadius: 9, fontSize: 12, color: "#0f172a", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const }}
+                  onFocus={e => e.target.style.borderColor = "#1d4ed8"}
+                  onBlur={e  => e.target.style.borderColor = "#e2e8f0"}
+                />
+              </div>
+            </div>
+          ))}
+
+          {error && (
+            <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 11px", fontSize: 11, color: "#9f1239", fontWeight: 600 }}>
+              ⚠️ {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 16px", borderTop: "1px solid #f1f5f9", display: "flex", gap: 8, flexShrink: 0 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 9, borderRadius: 9, border: "1.5px solid #e2e8f0", background: "white", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>
+            Annuler
+          </button>
+          <button onClick={handleSubmit} disabled={loading} style={{ flex: 2, padding: 9, borderRadius: 9, border: "none", background: "linear-gradient(135deg,#1e3a8a,#1d4ed8)", color: "white", fontSize: 12, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1 }}>
+            {loading ? "⏳ Enregistrement…" : "✓ Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODAL SUPPRIMER SUPERVISEUR ─────────────────────────────────────────────
+
+function DeleteSupervisorModal({
+  sv, onClose, onSuccess,
+}: {
+  sv: SupervisorItem;
+  onClose: () => void;
+  onSuccess: (userId: string) => void;
+}) {
+  const [reason,  setReason]  = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    setLoading(true); setError(null);
+    try {
+      await AuthService.deleteUser(sv.user.id, reason || undefined);
+      onSuccess(sv.user.id);
+      onClose();
+    } catch (e: any) {
+      setError(e?.response?.data?.message || "Erreur lors de la suppression");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,.55)", backdropFilter: "blur(3px)" }} onClick={onClose} />
+      <div style={{ position: "relative", background: "white", borderRadius: 18, width: "100%", maxWidth: 360, overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,.18)", border: "1.5px solid #fecdd3" }}>
+
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg,#9f1239,#e11d48)", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,255,255,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🗑️</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "white" }}>Supprimer ce superviseur</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,.65)" }}>{sv.user.nomComplet}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,.18)", border: "none", color: "white", fontSize: 14, cursor: "pointer" }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 10, padding: "10px 12px", display: "flex", gap: 8 }}>
+            <span style={{ flexShrink: 0 }}>⚠️</span>
+            <p style={{ fontSize: 11, color: "#9f1239", fontWeight: 600, lineHeight: 1.5, margin: 0 }}>
+              Cette action est <strong>irréversible</strong>. Toutes les données associées seront supprimées définitivement.
+            </p>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 4 }}>
+              Raison <span style={{ fontWeight: 400, textTransform: "none" as const }}>(optionnel)</span>
+            </div>
+            <input
+              type="text"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Ex: compte inactif, doublon..."
+              style={{ width: "100%", padding: "8px 10px", border: "1.5px solid #e2e8f0", borderRadius: 9, fontSize: 12, color: "#0f172a", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const }}
+              onFocus={e => e.target.style.borderColor = "#e11d48"}
+              onBlur={e  => e.target.style.borderColor = "#e2e8f0"}
+            />
+          </div>
+
+          {error && (
+            <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 11px", fontSize: 11, color: "#9f1239", fontWeight: 600 }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: 9, borderRadius: 9, border: "1.5px solid #e2e8f0", background: "white", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>
+              Annuler
+            </button>
+            <button onClick={handleDelete} disabled={loading} style={{ flex: 1, padding: 9, borderRadius: 9, border: "none", background: loading ? "#f87171" : "#e11d48", color: "white", fontSize: 12, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "⏳ Suppression…" : "🗑️ Supprimer"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function SupervisorsPage() {
@@ -135,7 +397,14 @@ export default function SupervisorsPage() {
   const [submitting, setSubmitting]     = useState(false);
   const [actioning, setActioning]       = useState<string | null>(null);
 
-  const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
+  // ── Modals modifier / supprimer ──
+  const [editSv,   setEditSv]   = useState<SupervisorItem | null>(null);
+  const [deleteSv, setDeleteSv] = useState<SupervisorItem | null>(null);
+
+  const showToast = (msg: string, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -146,11 +415,9 @@ export default function SupervisorsPage() {
         const p = (rAll as any)?.data?.data ?? (rAll as any)?.data ?? rAll;
         list = Array.isArray(p) ? p : p?.users ?? p?.supervisors ?? [];
       } catch {
-        try {
-          const rActive = await userRoutes.getAllUsers({ role: "SUPERVISEUR", status: "ACTIVE", limit: 200 });
-          const p = (rActive as any)?.data?.data ?? (rActive as any)?.data ?? rActive;
-          list = Array.isArray(p) ? p : p?.users ?? p?.supervisors ?? [];
-        } catch (e2: any) { throw e2; }
+        const rActive = await userRoutes.getAllUsers({ role: "SUPERVISEUR", status: "ACTIVE", limit: 200 });
+        const p = (rActive as any)?.data?.data ?? (rActive as any)?.data ?? rActive;
+        list = Array.isArray(p) ? p : p?.users ?? p?.supervisors ?? [];
       }
       list = list.filter((u, i) => list.findIndex(x => x.id === u.id) === i);
       if (list.length === 0) { setSupervisors([]); return; }
@@ -173,7 +440,6 @@ export default function SupervisorsPage() {
           const r = (codeRes.value as any);
           return r?.data?.data?.codeAcces ?? r?.data?.data?.codeClair ?? r?.data?.codeAcces ?? r?.data?.codeClair ?? null;
         })();
-
         const dashRes = dashResults[i];
         if (dashRes.status === "rejected") return { user: { ...u, codeClair }, todayStats: null, loading: false };
         const d = dashRes.value as unknown as DashboardData;
@@ -223,8 +489,13 @@ export default function SupervisorsPage() {
   const handleToggle = async (sv: SupervisorItem) => {
     setActioning(sv.user.id);
     try {
-      if (sv.user.status === "ACTIVE") { await userRoutes.suspendUser(sv.user.id); showToast(`⏸ ${sv.user.nomComplet} suspendu`); }
-      else { await userRoutes.activateUser(sv.user.id); showToast(`✅ ${sv.user.nomComplet} activé`); }
+      if (sv.user.status === "ACTIVE") {
+        await userRoutes.suspendUser(sv.user.id);
+        showToast(`⏸ ${sv.user.nomComplet} suspendu`);
+      } else {
+        await userRoutes.activateUser(sv.user.id);
+        showToast(`✅ ${sv.user.nomComplet} activé`);
+      }
       setPanelId(null); setSupervisors([]); await load();
     } catch (e: any) { showToast(e?.response?.data?.message ?? "Erreur", false); }
     finally { setActioning(null); }
@@ -236,17 +507,22 @@ export default function SupervisorsPage() {
       const r = await userRoutes.regenerateUserCode(sv.user.id);
       const code = (r as any)?.data?.data?.nouveauCode ?? (r as any)?.data?.data?.codeAcces ?? "—";
       setShowCode({ nom: sv.user.nomComplet, code });
-      setSupervisors(prev => prev.map(s => s.user.id === sv.user.id ? { ...s, user: { ...s.user, codeClair: code } } : s));
+      setSupervisors(prev => prev.map(s =>
+        s.user.id === sv.user.id ? { ...s, user: { ...s.user, codeClair: code } } : s
+      ));
     } catch (e: any) { showToast(e?.response?.data?.message ?? "Erreur", false); }
     finally { setActioning(null); }
   };
 
   const handleCreate = async () => {
-    if (!form.nomComplet.trim() || !form.telephone.trim()) { showToast("Nom et téléphone requis", false); return; }
+    if (!form.nomComplet.trim() || !form.telephone.trim()) {
+      showToast("Nom et téléphone requis", false); return;
+    }
     setSubmitting(true);
     try {
       const r: any = await userRoutes.createUser({
-        nomComplet: form.nomComplet.trim(), telephone: form.telephone.trim(), role: "SUPERVISEUR", code: form.code.trim() || null,
+        nomComplet: form.nomComplet.trim(), telephone: form.telephone.trim(),
+        role: "SUPERVISEUR", code: form.code.trim() || null,
       });
       const generatedCode = r?.data?.data?.codeAcces ?? r?.data?.data?.code ?? null;
       setShowCreate(false); setForm({ nomComplet: "", telephone: "", code: "" });
@@ -257,30 +533,41 @@ export default function SupervisorsPage() {
     finally { setSubmitting(false); }
   };
 
+  // ── Handlers modifier / supprimer ──
+  const handleEditSuccess = (userId: string, updated: Partial<User>) => {
+    setSupervisors(prev => prev.map(s =>
+      s.user.id === userId ? { ...s, user: { ...s.user, ...updated } } : s
+    ));
+    showToast("✅ Superviseur modifié");
+    setEditSv(null);
+  };
+
+  const handleDeleteSuccess = (userId: string) => {
+    setSupervisors(prev => prev.filter(s => s.user.id !== userId));
+    if (panelId === userId) setPanelId(null);
+    showToast("🗑️ Superviseur supprimé");
+    setDeleteSv(null);
+  };
+
   const panelSv = panelId ? sorted.find(s => s.user.id === panelId) : null;
 
   return (
     <>
       <style>{CSS}</style>
 
-      {/* ── LAYOUT COMME LES AUTRES PAGES ── */}
       <div className="flex min-h-screen bg-[#f1f5f9]">
         <DashboardSidebar mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} />
 
         <div className="flex-1 min-w-0">
 
-          {/* ── HERO ── */}
+          {/* HERO */}
           <div className="sp-hero">
             <div className="sp-hero-deco" />
             <div className="sp-hero-row">
               <div className="sp-hero-left">
-                {/* Hamburger — Tailwind pur */}
-                <button
-                  onClick={() => setSidebarOpen(true)}
+                <button onClick={() => setSidebarOpen(true)}
                   className="lg:hidden flex items-center justify-center rounded-xl flex-shrink-0 cursor-pointer"
-                  style={{ width: 36, height: 36, background: "rgba(255,255,255,.18)", border: "1px solid rgba(255,255,255,.3)" }}
-                  aria-label="Ouvrir le menu"
-                >
+                  style={{ width: 36, height: 36, background: "rgba(255,255,255,.18)", border: "1px solid rgba(255,255,255,.3)" }}>
                   <Menu className="h-4 w-4 text-white" />
                 </button>
                 <div>
@@ -309,10 +596,8 @@ export default function SupervisorsPage() {
             </div>
           </div>
 
-          {/* ── CONTENU ── */}
+          {/* CONTENU */}
           <div className="sp-body">
-
-            {/* Tabs */}
             <div className="sp-tabs-row">
               <div className="sp-tabs">
                 {(["tous", "actifs", "suspendus"] as const).map(t => (
@@ -331,7 +616,6 @@ export default function SupervisorsPage() {
               </div>
             )}
 
-            {/* Grid cartes */}
             <div className="sp-grid">
               {loading
                 ? Array(6).fill(0).map((_, i) => <CardSkeleton key={i} />)
@@ -341,14 +625,17 @@ export default function SupervisorsPage() {
                       <SupervisorCard key={sv.user.id} sv={sv}
                         rank={sorted.findIndex(s => s.user.id === sv.user.id) + 1}
                         idx={idx} maxTx={maxTx}
-                        onOpen={() => setPanelId(sv.user.id)} />
+                        onOpen={() => setPanelId(sv.user.id)}
+                        onEdit={() => setEditSv(sv)}
+                        onDelete={() => setDeleteSv(sv)}
+                      />
                     ))}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── PANEL DETAIL ── */}
+      {/* PANEL DETAIL */}
       <div className={`sp-overlay${panelId ? " on" : ""}`} onClick={() => setPanelId(null)} />
       <div className={`sp-panel${panelId ? " open" : ""}`}>
         {panelSv && (
@@ -357,11 +644,32 @@ export default function SupervisorsPage() {
             onClose={() => setPanelId(null)}
             onToggle={() => handleToggle(panelSv)}
             onRegen={() => handleRegen(panelSv)}
-            actioning={actioning} />
+            onEdit={() => setEditSv(panelSv)}
+            onDelete={() => setDeleteSv(panelSv)}
+            actioning={actioning}
+          />
         )}
       </div>
 
-      {/* ── MODAL CRÉATION ── */}
+      {/* MODAL MODIFIER */}
+      {editSv && (
+        <EditSupervisorModal
+          sv={editSv}
+          onClose={() => setEditSv(null)}
+          onSuccess={(updated) => handleEditSuccess(editSv.user.id, updated)}
+        />
+      )}
+
+      {/* MODAL SUPPRIMER */}
+      {deleteSv && (
+        <DeleteSupervisorModal
+          sv={deleteSv}
+          onClose={() => setDeleteSv(null)}
+          onSuccess={handleDeleteSuccess}
+        />
+      )}
+
+      {/* MODAL CRÉATION */}
       {showCreate && (
         <div className="sp-modal-bg" onClick={e => { if (e.target === e.currentTarget) setShowCreate(false); }}>
           <div className="sp-modal">
@@ -386,17 +694,22 @@ export default function SupervisorsPage() {
                   </div>
                 </div>
               ))}
-              <div className="sp-notice"><span>💡</span><p>{form.code ? "Code personnalisé." : "Code à 6 chiffres généré automatiquement."}</p></div>
+              <div className="sp-notice">
+                <span>💡</span>
+                <p>{form.code ? "Code personnalisé." : "Code à 6 chiffres généré automatiquement."}</p>
+              </div>
               <div className="sp-modal-btns">
                 <button className="sp-btn-cancel" onClick={() => setShowCreate(false)}>Annuler</button>
-                <button className="sp-btn-ok" onClick={handleCreate} disabled={submitting}>{submitting ? "Création…" : "＋ Créer"}</button>
+                <button className="sp-btn-ok" onClick={handleCreate} disabled={submitting}>
+                  {submitting ? "Création…" : "＋ Créer"}
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── MODAL CODE ── */}
+      {/* MODAL CODE */}
       {showCode && (
         <div className="sp-modal-bg" onClick={() => setShowCode(null)}>
           <div className="sp-modal" onClick={e => e.stopPropagation()}>
@@ -414,7 +727,9 @@ export default function SupervisorsPage() {
               <button className="sp-btn-copy" onClick={async () => { await navigator.clipboard.writeText(showCode.code); showToast("Code copié !"); }}>
                 📋 Copier le code
               </button>
-              <button className="sp-btn-ok" style={{ width: "100%" }} onClick={() => setShowCode(null)}>✅ J'ai noté le code</button>
+              <button className="sp-btn-ok" style={{ width: "100%" }} onClick={() => setShowCode(null)}>
+                ✅ J'ai noté le code
+              </button>
             </div>
           </div>
         </div>
@@ -445,8 +760,9 @@ function CardSkeleton() {
 
 // ─── SUPERVISOR CARD ─────────────────────────────────────────────────────────
 
-function SupervisorCard({ sv, rank, idx, maxTx, onOpen }: {
-  sv: SupervisorItem; rank: number; idx: number; maxTx: number; onOpen: () => void;
+function SupervisorCard({ sv, rank, idx, maxTx, onOpen, onEdit, onDelete }: {
+  sv: SupervisorItem; rank: number; idx: number; maxTx: number;
+  onOpen: () => void; onEdit: () => void; onDelete: () => void;
 }) {
   const { user, todayStats, loading } = sv;
   const active = user.status === "ACTIVE";
@@ -463,28 +779,49 @@ function SupervisorCard({ sv, rank, idx, maxTx, onOpen }: {
     <div className="sp-card" style={{ animationDelay: `${idx * 0.06}s` }}>
       <div className={`sp-card-bar${active ? "" : " suspended"}`} />
       <div className="sp-card-body">
-        <div className="sp-card-header">
+
+        {/* Header + boutons modifier/supprimer */}
+        <div className="sp-card-header" style={{ position: "relative" }}>
           <div className={`sp-rank ${rankCls}`}>{rankEl}</div>
-          <div className="sp-avatar" style={{ background: pal.bg, color: pal.text }}>{initials(user.nomComplet)}</div>
+
+          {/* Avatar / photo */}
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            {user.photo ? (
+              <img src={user.photo} alt={user.nomComplet}
+                style={{ width: 40, height: 40, borderRadius: 11, objectFit: "cover", border: "2px solid #e2e8f0" }} />
+            ) : (
+              <div className="sp-avatar" style={{ background: pal.bg, color: pal.text }}>
+                {initials(user.nomComplet)}
+              </div>
+            )}
+          </div>
+
           <div className="sp-info">
             <div className="sp-name">{user.nomComplet}</div>
             <div className="sp-phone">📞 {user.telephone}</div>
             <div className={`sp-badge ${active ? "sp-badge-on" : "sp-badge-off"}`}>{active ? "Actif" : "Suspendu"}</div>
           </div>
-          {loading ? <Sk w={48} h={48} r={50} /> : (
-            <Donut size={48} segs={todayStats && (todayStats.debutTotal > 0 || todayStats.sortieTotal > 0)
-              ? [{ color: "#1d4ed8", v: todayStats.debutTotal }, { color: "#60a5fa", v: todayStats.sortieTotal }]
-              : []} />
-          )}
+
+          {/* Boutons modifier / supprimer */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0 }}>
+            <button onClick={e => { e.stopPropagation(); onEdit(); }}
+              title="Modifier"
+              style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              ✏️
+            </button>
+            <button onClick={e => { e.stopPropagation(); onDelete(); }}
+              title="Supprimer"
+              style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #fecdd3", background: "#fff1f2", color: "#e11d48", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              🗑️
+            </button>
+          </div>
         </div>
 
         <div className="sp-code-row">
           <span className="sp-code-row-lbl">🔑 Code</span>
-          {loading
-            ? <Sk w={88} h={26} r={8} />
-            : code
-              ? <CopyCodeBtn code={code} />
-              : <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>Non disponible</span>
+          {loading ? <Sk w={88} h={26} r={8} /> : code
+            ? <CopyCodeBtn code={code} />
+            : <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>Non disponible</span>
           }
         </div>
 
@@ -511,12 +848,16 @@ function SupervisorCard({ sv, rank, idx, maxTx, onOpen }: {
           </div>
         )}
         {!loading && !todayStats && (
-          <div className="sp-gr-pill sp-gr-neutral"><span style={{ margin: "0 auto" }}>{active ? "Aucune activité" : "Compte suspendu"}</span></div>
+          <div className="sp-gr-pill sp-gr-neutral">
+            <span style={{ margin: "0 auto" }}>{active ? "Aucune activité" : "Compte suspendu"}</span>
+          </div>
         )}
 
         <div className="sp-prog-wrap">
           <div className="sp-prog-meta"><span>Activité relative</span><strong>{pct}%</strong></div>
-          <div className="sp-prog-track"><div className={`sp-prog-fill${active ? "" : " suspended"}`} style={{ width: loading ? "0%" : `${pct}%` }} /></div>
+          <div className="sp-prog-track">
+            <div className={`sp-prog-fill${active ? "" : " suspended"}`} style={{ width: loading ? "0%" : `${pct}%` }} />
+          </div>
         </div>
 
         <div className="sp-card-foot">
@@ -539,21 +880,20 @@ function ActionPopover({ action, onClose, onSuccess }: { action: ActiveAction; o
   const [inputValue, setInputValue] = useState(String(action.currentValue));
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
-  const isPartnerRow = action.accountKey.startsWith("part-");
-  const displayLabel = isPartnerRow ? action.accountKey.replace("part-", "") : accountLabel(action.accountKey);
+  const displayLabel = action.accountKey.startsWith("part-") ? action.accountKey.replace("part-", "") : accountLabel(action.accountKey);
   const lineLabel    = action.lineType === "debut" ? "Début" : "Fin";
   const cfg = {
-    edit:   { title: "Modifier",      accent: "#1d4ed8", light: "rgba(29,78,216,.08)",  textColor: "#1e3a8a", btnLabel: "Enregistrer",   icon: "✏️" },
-    delete: { title: "Supprimer",     accent: "#ef4444", light: "rgba(239,68,68,.08)",  textColor: "#991b1b", btnLabel: "Supprimer",     icon: "🗑️" },
-    reset:  { title: "Remettre à 0",  accent: "#f59e0b", light: "rgba(245,158,11,.08)", textColor: "#92400e", btnLabel: "Réinitialiser", icon: "↺"  },
+    edit:   { title: "Modifier",     accent: "#1d4ed8", light: "rgba(29,78,216,.08)",  textColor: "#1e3a8a", btnLabel: "Enregistrer",   icon: "✏️" },
+    delete: { title: "Supprimer",    accent: "#ef4444", light: "rgba(239,68,68,.08)",  textColor: "#991b1b", btnLabel: "Supprimer",     icon: "🗑️" },
+    reset:  { title: "Remettre à 0", accent: "#f59e0b", light: "rgba(245,158,11,.08)", textColor: "#92400e", btnLabel: "Réinitialiser", icon: "↺"  },
   }[action.mode];
 
   const handleSubmit = async () => {
     setLoading(true); setError(null);
     try {
       const { default: ALS } = await import("@/services/accountLines.service") as any;
-      if (action.mode === "delete")      await ALS.deleteAccountLine(action.supervisorId, action.lineType, action.accountKey);
-      else if (action.mode === "reset")  await ALS.resetAccountLine(action.supervisorId, action.lineType, action.accountKey, 0);
+      if (action.mode === "delete")     await ALS.deleteAccountLine(action.supervisorId, action.lineType, action.accountKey);
+      else if (action.mode === "reset") await ALS.resetAccountLine(action.supervisorId, action.lineType, action.accountKey, 0);
       else {
         const val = parseFloat(inputValue);
         if (isNaN(val) || val < 0) { setError("Valeur invalide"); setLoading(false); return; }
@@ -607,9 +947,11 @@ function ActionPopover({ action, onClose, onSuccess }: { action: ActiveAction; o
 
 // ─── PANEL DETAIL ─────────────────────────────────────────────────────────────
 
-function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
+function PanelDetail({ sv, rank, onClose, onToggle, onRegen, onEdit, onDelete, actioning }: {
   sv: SupervisorItem; rank: number; onClose: () => void;
-  onToggle: () => void; onRegen: () => void; actioning: string | null;
+  onToggle: () => void; onRegen: () => void;
+  onEdit: () => void; onDelete: () => void;
+  actioning: string | null;
 }) {
   const { user } = sv;
   const active   = user.status === "ACTIVE";
@@ -663,25 +1005,40 @@ function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
 
   return (
     <>
-      {activeAction && <ActionPopover action={activeAction} onClose={() => setActiveAction(null)} onSuccess={() => { setActiveAction(null); loadDash(); }} />}
+      {activeAction && (
+        <ActionPopover action={activeAction} onClose={() => setActiveAction(null)}
+          onSuccess={() => { setActiveAction(null); loadDash(); }} />
+      )}
 
       <div className="sp-ph">
         <button className="sp-ph-close" onClick={onClose}>×</button>
+
         <div className="sp-ph-av-row">
-          <div className="sp-ph-av" style={{ background: pal.bg, color: pal.text }}>{initials(user.nomComplet)}</div>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            {user.photo ? (
+              <img src={user.photo} alt={user.nomComplet}
+                style={{ width: 50, height: 50, borderRadius: 15, objectFit: "cover", border: "3px solid rgba(255,255,255,.26)" }} />
+            ) : (
+              <div className="sp-ph-av" style={{ background: pal.bg, color: pal.text }}>{initials(user.nomComplet)}</div>
+            )}
+          </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
               <div className="sp-ph-name">{user.nomComplet}</div>
               <div className={`sp-rank ${rankCls}`} style={{ flexShrink: 0 }}>{rankEl}</div>
             </div>
             <div className="sp-ph-phone">📞 {user.telephone}</div>
-            <div className="sp-ph-since">Membre depuis {user.createdAt ? new Date(user.createdAt).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "—"}</div>
+            <div className="sp-ph-since">
+              Membre depuis {user.createdAt ? new Date(user.createdAt).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "—"}
+            </div>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" as const }}>
-          <div className={`sp-badge${active ? " sp-badge-on" : " sp-badge-off"}`} style={{ display: "inline-flex" }}>{active ? "Compte actif" : "Compte suspendu"}</div>
-          {code ? (
+          <div className={`sp-badge${active ? " sp-badge-on" : " sp-badge-off"}`} style={{ display: "inline-flex" }}>
+            {active ? "Compte actif" : "Compte suspendu"}
+          </div>
+          {code && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.18)", border: "1px solid rgba(255,255,255,.28)", borderRadius: 9, padding: "4px 10px" }}>
               <span style={{ fontSize: 11, color: "rgba(255,255,255,.7)", fontWeight: 600 }}>Code :</span>
               <span style={{ fontSize: 14, color: "white", fontWeight: 800, fontFamily: "monospace", letterSpacing: ".1em" }}>{code}</span>
@@ -690,8 +1047,6 @@ function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
                 📋
               </button>
             </div>
-          ) : (
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,.45)", fontStyle: "italic" }}>Code non disponible</span>
           )}
         </div>
       </div>
@@ -711,7 +1066,6 @@ function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
         )}
 
         {loadingDash && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{[1,2,3].map(i => <Sk key={i} h={40} r={9} />)}</div>}
-
         {errDash && !loadingDash && (
           <div className="sp-err" style={{ margin: 0 }}>⚠️ {errDash}<button onClick={loadDash} className="sp-err-retry">Réessayer</button></div>
         )}
@@ -730,21 +1084,21 @@ function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
               {allRows.length === 0
                 ? <div className="sp-empty">📭 Aucune donnée pour aujourd'hui</div>
                 : allRows.map(r => (
-                  <div key={r.key} className="sp-at-row">
-                    <div className="sp-at-cell sp-at-cell-green">
-                      {r.debut > 0 ? (<>
-                        <div className="sp-at-cell-l"><span className="sp-at-ico">{accountIcon(r.key)}</span><span className="sp-at-name">{accountLabel(r.key)}</span></div>
-                        <div className="sp-at-cell-r"><span className="sp-at-amt">{fmt(r.debut)} F</span><ActionBtns lineType="debut" rowKey={r.key} montant={r.debut} /></div>
-                      </>) : <span />}
+                    <div key={r.key} className="sp-at-row">
+                      <div className="sp-at-cell sp-at-cell-green">
+                        {r.debut > 0 ? (<>
+                          <div className="sp-at-cell-l"><span className="sp-at-ico">{accountIcon(r.key)}</span><span className="sp-at-name">{accountLabel(r.key)}</span></div>
+                          <div className="sp-at-cell-r"><span className="sp-at-amt">{fmt(r.debut)} F</span><ActionBtns lineType="debut" rowKey={r.key} montant={r.debut} /></div>
+                        </>) : <span />}
+                      </div>
+                      <div className="sp-at-cell sp-at-cell-blue">
+                        {r.sortie > 0 ? (<>
+                          <div className="sp-at-cell-l"><span className="sp-at-ico">{accountIcon(r.key)}</span><span className="sp-at-name">{accountLabel(r.key)}</span></div>
+                          <div className="sp-at-cell-r"><span className="sp-at-amt">{fmt(r.sortie)} F</span><ActionBtns lineType="sortie" rowKey={r.key} montant={r.sortie} /></div>
+                        </>) : <span />}
+                      </div>
                     </div>
-                    <div className="sp-at-cell sp-at-cell-blue">
-                      {r.sortie > 0 ? (<>
-                        <div className="sp-at-cell-l"><span className="sp-at-ico">{accountIcon(r.key)}</span><span className="sp-at-name">{accountLabel(r.key)}</span></div>
-                        <div className="sp-at-cell-r"><span className="sp-at-amt">{fmt(r.sortie)} F</span><ActionBtns lineType="sortie" rowKey={r.key} montant={r.sortie} /></div>
-                      </>) : <span />}
-                    </div>
-                  </div>
-                ))}
+                  ))}
               <div className="sp-at-footer">
                 <div className="sp-at-foot" style={{ background: "rgba(29,78,216,.05)" }}>
                   <div className="sp-at-foot-lbl" style={{ color: "#1d4ed8" }}>Début</div>
@@ -776,7 +1130,9 @@ function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
                             <div className="sp-tx-who">{tx.personne} · {timeAgo(tx.createdAt)}</div>
                           </div>
                         </div>
-                        <div className={`sp-tx-amt ${isPos ? "sp-tx-pos" : "sp-tx-neg"}`}>{isPos ? "+" : "-"}{fmt(tx.montant)} F</div>
+                        <div className={`sp-tx-amt ${isPos ? "sp-tx-pos" : "sp-tx-neg"}`}>
+                          {isPos ? "+" : "-"}{fmt(tx.montant)} F
+                        </div>
                       </div>
                     );
                   })}
@@ -786,6 +1142,7 @@ function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
           </>
         )}
 
+        {/* Actions */}
         <div className="sp-act-row">
           <button className={`sp-act-btn ${active ? "sp-act-susp" : "sp-act-activ"}`} onClick={onToggle} disabled={isSusp}>
             {isSusp ? "⏳ En cours…" : active ? "⏸ Suspendre" : "▶ Activer"}
@@ -794,77 +1151,64 @@ function PanelDetail({ sv, rank, onClose, onToggle, onRegen, actioning }: {
             {isReg ? "⏳ Génération…" : "🔑 Réinitialiser code"}
           </button>
         </div>
+
+        {/* Boutons modifier / supprimer dans le panel */}
+        <div className="sp-act-row">
+          <button
+            onClick={onEdit}
+            style={{ flex: 1, padding: 10, borderRadius: 10, border: "1.5px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+            ✏️ Modifier
+          </button>
+          <button
+            onClick={onDelete}
+            style={{ flex: 1, padding: 10, borderRadius: 10, border: "1.5px solid #fecdd3", background: "#fff1f2", color: "#e11d48", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+            🗑️ Supprimer
+          </button>
+        </div>
       </div>
     </>
   );
 }
 
-// ─── CSS ──────────────────────────────────────────────────────────────────────
+// ─── CSS (inchangé) ───────────────────────────────────────────────────────────
 
 const CSS = `
 @keyframes skpulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 @keyframes spFadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
 * { box-sizing: border-box; }
-
-/* HERO */
-.sp-hero {
-  background: linear-gradient(135deg,#1e3a8a,#1d4ed8,#2563eb);
-  padding: 20px 16px 18px; position: relative; overflow: hidden;
-}
-@media (min-width:640px) { .sp-hero { padding: 24px 32px 20px; } }
+.sp-hero { background:linear-gradient(135deg,#1e3a8a,#1d4ed8,#2563eb); padding:20px 16px 18px; position:relative; overflow:hidden; }
+@media (min-width:640px) { .sp-hero { padding:24px 32px 20px; } }
 .sp-hero-deco { position:absolute; top:-60px; right:-40px; width:190px; height:190px; border-radius:50%; background:rgba(255,255,255,.06); pointer-events:none; }
-
-.sp-hero-row {
-  display: flex; align-items: flex-start; flex-wrap: wrap;
-  gap: 12px; justify-content: space-between;
-}
+.sp-hero-row { display:flex; align-items:flex-start; flex-wrap:wrap; gap:12px; justify-content:space-between; }
 .sp-hero-left { display:flex; align-items:flex-start; gap:10px; min-width:0; }
-
 .sp-eyebrow { font-size:10px; font-weight:700; color:rgba(255,255,255,.55); text-transform:uppercase; letter-spacing:.1em; margin-bottom:2px; }
 .sp-title   { font-size:clamp(18px,4vw,22px); font-weight:800; color:white; letter-spacing:-.02em; line-height:1.1; margin-bottom:2px; }
 .sp-sub     { font-size:11px; color:rgba(255,255,255,.6); }
-
 .sp-kpis  { display:flex; gap:6px; flex-wrap:wrap; }
 .sp-kpill { background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); backdrop-filter:blur(8px); border-radius:11px; padding:7px 10px; text-align:center; min-width:64px; }
 .sp-kpill-ico { font-size:11px; margin-bottom:2px; }
 .sp-kpill-val { font-size:14px; font-weight:800; color:white; line-height:1; }
 .sp-kpill-lbl { font-size:8px; color:rgba(255,255,255,.6); font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-top:2px; white-space:nowrap; }
-
-.sp-btn-new {
-  background:white; color:#1d4ed8; border:none; border-radius:10px;
-  padding:8px 14px; font-weight:700; font-size:12px; cursor:pointer;
-  box-shadow:0 4px 14px rgba(0,0,0,.14); white-space:nowrap; transition:all .2s; flex-shrink:0; align-self:flex-start;
-}
+.sp-btn-new { background:white; color:#1d4ed8; border:none; border-radius:10px; padding:8px 14px; font-weight:700; font-size:12px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.14); white-space:nowrap; transition:all .2s; flex-shrink:0; align-self:flex-start; }
 .sp-btn-new:hover { transform:translateY(-1px); box-shadow:0 7px 22px rgba(0,0,0,.18); }
-
-/* BODY */
-.sp-body { padding: 14px 12px; }
-@media (min-width:640px) { .sp-body { padding: 16px 24px; } }
-@media (min-width:1024px) { .sp-body { padding: 18px 32px; } }
-
-/* TABS */
+.sp-body { padding:14px 12px; }
+@media (min-width:640px) { .sp-body { padding:16px 24px; } }
+@media (min-width:1024px) { .sp-body { padding:18px 32px; } }
 .sp-tabs-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
-.sp-tabs     { display:flex; background:white; border:1px solid #e2e8f0; border-radius:10px; padding:3px; gap:2px; }
-.sp-tab      { border:none; background:transparent; border-radius:7px; padding:5px 10px; font-weight:600; font-size:11px; color:#64748b; cursor:pointer; transition:all .14s; white-space:nowrap; }
-.sp-tab.on   { background:#1d4ed8; color:white; box-shadow:0 2px 7px rgba(29,78,216,.28); }
+.sp-tabs { display:flex; background:white; border:1px solid #e2e8f0; border-radius:10px; padding:3px; gap:2px; }
+.sp-tab  { border:none; background:transparent; border-radius:7px; padding:5px 10px; font-weight:600; font-size:11px; color:#64748b; cursor:pointer; transition:all .14s; white-space:nowrap; }
+.sp-tab.on { background:#1d4ed8; color:white; box-shadow:0 2px 7px rgba(29,78,216,.28); }
 .sp-sort-hint { font-size:10px; color:#94a3b8; }
 @media (max-width:480px) { .sp-sort-hint { display:none; } }
-
-/* ERROR */
-.sp-err       { background:#fee2e2; border:1px solid #fca5a5; border-radius:10px; padding:9px 13px; color:#9f1239; font-size:12px; font-weight:600; margin-bottom:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.sp-err { background:#fee2e2; border:1px solid #fca5a5; border-radius:10px; padding:9px 13px; color:#9f1239; font-size:12px; font-weight:600; margin-bottom:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .sp-err-retry { background:none; border:none; color:#9f1239; font-weight:800; cursor:pointer; text-decoration:underline; }
-
-/* GRID */
-.sp-grid  { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+.sp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
 @media (max-width:480px) { .sp-grid { grid-template-columns:1fr; } }
-
-/* CARD */
 .sp-card { background:white; border-radius:15px; border:1px solid #edf0f4; box-shadow:0 2px 8px rgba(0,0,0,.04); overflow:hidden; animation:spFadeUp .5s ease both; transition:all .2s; }
 .sp-card:hover { transform:translateY(-2px); box-shadow:0 9px 28px rgba(0,0,0,.08); border-color:#93c5fd; }
 .sp-card-bar { height:3px; background:linear-gradient(90deg,#1d4ed8,#60a5fa); }
 .sp-card-bar.suspended { background:linear-gradient(90deg,#e2e8f0,#cbd5e1); }
 .sp-card-body { padding:13px; }
-
 .sp-card-header { display:flex; align-items:flex-start; gap:7px; margin-bottom:9px; }
 .sp-rank   { width:21px; height:21px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:800; flex-shrink:0; margin-top:2px; }
 .sp-rank-1 { background:linear-gradient(135deg,#fbbf24,#d97706); color:white; }
@@ -872,18 +1216,16 @@ const CSS = `
 .sp-rank-3 { background:linear-gradient(135deg,#d97706,#92400e); color:white; }
 .sp-rank-n { background:#f1f5f9; color:#64748b; }
 .sp-avatar { width:40px; height:40px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex-shrink:0; }
-.sp-info   { flex:1; min-width:0; }
-.sp-name   { font-weight:700; font-size:12px; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px; }
-.sp-phone  { font-size:10px; color:#64748b; }
-.sp-badge  { display:inline-flex; align-items:center; gap:3px; font-size:9px; font-weight:700; text-transform:uppercase; padding:2px 6px; border-radius:99px; margin-top:3px; }
+.sp-info { flex:1; min-width:0; }
+.sp-name  { font-weight:700; font-size:12px; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px; }
+.sp-phone { font-size:10px; color:#64748b; }
+.sp-badge { display:inline-flex; align-items:center; gap:3px; font-size:9px; font-weight:700; text-transform:uppercase; padding:2px 6px; border-radius:99px; margin-top:3px; }
 .sp-badge::before { content:''; width:4px; height:4px; border-radius:50%; background:currentColor; }
 .sp-badge-on  { background:#dbeafe; color:#1d4ed8; }
 .sp-badge-off { background:#fee2e2; color:#9f1239; }
-
-.sp-code-row     { display:flex; align-items:center; gap:7px; margin-bottom:9px; padding:6px 9px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; }
+.sp-code-row { display:flex; align-items:center; gap:7px; margin-bottom:9px; padding:6px 9px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; }
 .sp-code-row-lbl { font-size:10px; font-weight:700; color:#64748b; white-space:nowrap; }
-
-.sp-stats    { display:flex; align-items:center; background:#f8fafc; border-radius:10px; padding:8px; margin-bottom:8px; }
+.sp-stats { display:flex; align-items:center; background:#f8fafc; border-radius:10px; padding:8px; margin-bottom:8px; }
 .sp-stat-box { flex:1; text-align:center; }
 .sp-stat-sep { width:1px; height:24px; background:#e2e8f0; flex-shrink:0; margin:0 2px; }
 .sp-stat-val    { font-size:12px; font-weight:800; line-height:1; margin-bottom:2px; }
@@ -891,13 +1233,11 @@ const CSS = `
 .sp-stat-blue   { color:#1d4ed8; }
 .sp-stat-indigo { color:#4338ca; font-size:11px; }
 .sp-stat-sky    { color:#0284c7; font-size:11px; }
-
 .sp-gr-pill     { display:flex; justify-content:space-between; align-items:center; border-radius:7px; padding:5px 9px; margin-bottom:8px; font-size:10px; }
 .sp-gr-pos      { background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; }
 .sp-gr-neg      { background:#fff1f2; border:1px solid #fecdd3; color:#be123c; }
 .sp-gr-neutral  { background:#f8fafc; border:1px solid #e2e8f0; color:#94a3b8; }
 .sp-gr-pill strong { font-weight:800; font-size:11px; }
-
 .sp-prog-wrap { margin-bottom:8px; }
 .sp-prog-meta { display:flex; justify-content:space-between; margin-bottom:3px; }
 .sp-prog-meta span   { font-size:9px; color:#64748b; font-weight:600; }
@@ -905,19 +1245,15 @@ const CSS = `
 .sp-prog-track { height:4px; background:#f1f5f9; border-radius:99px; overflow:hidden; }
 .sp-prog-fill  { height:100%; background:linear-gradient(90deg,#1d4ed8,#60a5fa); border-radius:99px; transition:width 1s cubic-bezier(.4,0,.2,1); }
 .sp-prog-fill.suspended { background:linear-gradient(90deg,#cbd5e1,#94a3b8); }
-
 .sp-card-foot  { display:flex; justify-content:space-between; margin-bottom:9px; font-size:9px; color:#94a3b8; }
 .sp-btn-detail { width:100%; padding:8px; border:none; border-radius:9px; font-weight:700; font-size:12px; cursor:pointer; background:linear-gradient(135deg,#1e3a8a,#1d4ed8); color:white; box-shadow:0 3px 9px rgba(29,78,216,.26); transition:all .16s; }
 .sp-btn-detail:hover { transform:translateY(-1px); box-shadow:0 5px 14px rgba(29,78,216,.36); }
-
-/* PANEL */
 .sp-overlay { position:fixed; inset:0; background:rgba(15,23,42,.4); backdrop-filter:blur(4px); z-index:100; opacity:0; pointer-events:none; transition:opacity .3s; }
 .sp-overlay.on { opacity:1; pointer-events:auto; }
-.sp-panel   { position:fixed; top:0; right:0; bottom:0; width:min(490px,100%); background:white; z-index:101; box-shadow:-10px 0 48px rgba(0,0,0,.11); overflow-y:auto; transform:translateX(110%); transition:transform .3s cubic-bezier(.4,0,.2,1); }
+.sp-panel { position:fixed; top:0; right:0; bottom:0; width:min(490px,100%); background:white; z-index:101; box-shadow:-10px 0 48px rgba(0,0,0,.11); overflow-y:auto; transform:translateX(110%); transition:transform .3s cubic-bezier(.4,0,.2,1); }
 .sp-panel.open { transform:none; }
 .sp-panel::-webkit-scrollbar { width:3px; }
 .sp-panel::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:99px; }
-
 .sp-ph { background:linear-gradient(135deg,#1e3a8a,#1d4ed8,#2563eb); padding:20px 16px 16px; position:relative; overflow:hidden; }
 .sp-ph::before { content:''; position:absolute; top:-50px; right:-50px; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
 .sp-ph-close  { position:absolute; top:12px; right:12px; width:27px; height:27px; border-radius:50%; background:rgba(255,255,255,.18); border:none; color:white; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
@@ -927,12 +1263,9 @@ const CSS = `
 .sp-ph-name   { font-size:15px; font-weight:800; color:white; }
 .sp-ph-phone  { font-size:11px; color:rgba(255,255,255,.65); margin-top:2px; }
 .sp-ph-since  { font-size:10px; color:rgba(255,255,255,.5); margin-top:1px; }
-
 .sp-pb { padding:15px 16px; display:flex; flex-direction:column; gap:14px; }
-.sp-sect-title   { font-size:9px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.08em; margin-bottom:7px; }
+.sp-sect-title { font-size:9px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.08em; margin-bottom:7px; }
 .sp-period-badge { display:inline-flex; align-items:center; gap:5px; background:#dbeafe; border:1.5px solid #bfdbfe; color:#1d4ed8; border-radius:8px; padding:5px 12px; font-size:11px; font-weight:700; }
-
-/* TABLE */
 .sp-at-wrap     { border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
 .sp-at-heads    { display:grid; grid-template-columns:1fr 1fr; }
 .sp-at-head     { display:flex; align-items:center; gap:5px; padding:7px 10px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
@@ -967,8 +1300,6 @@ const CSS = `
 .sp-at-foot:last-child  { border-left:1px solid #e2e8f0; }
 .sp-at-foot-lbl { font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px; }
 .sp-at-foot-val { font-size:13px; font-weight:900; }
-
-/* TX LIST */
 .sp-tx-list { display:flex; flex-direction:column; gap:1px; }
 .sp-tx-row  { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border-radius:7px; transition:background .1s; }
 .sp-tx-row:hover { background:#f8fafc; }
@@ -979,18 +1310,13 @@ const CSS = `
 .sp-tx-desc { font-size:11px; font-weight:600; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; }
 .sp-tx-who  { font-size:9px; color:#94a3b8; margin-top:1px; }
 .sp-tx-amt  { font-size:11px; font-weight:800; flex-shrink:0; margin-left:5px; }
-
 .sp-empty { text-align:center; padding:22px; color:#94a3b8; font-size:12px; font-weight:600; grid-column:1/-1; }
-
-/* ACTIONS */
 .sp-act-row  { display:flex; gap:7px; }
 .sp-act-btn  { flex:1; padding:10px; border-radius:10px; border:none; font-weight:700; font-size:12px; cursor:pointer; transition:all .14s; display:flex; align-items:center; justify-content:center; gap:4px; }
 .sp-act-btn:disabled { opacity:.6; cursor:not-allowed; }
 .sp-act-susp  { background:#fee2e2; color:#9f1239; }
 .sp-act-activ { background:#dbeafe; color:#1e3a8a; }
 .sp-act-code  { background:linear-gradient(135deg,#1e3a8a,#1d4ed8); color:white; box-shadow:0 3px 11px rgba(29,78,216,.26); }
-
-/* MODALS */
 .sp-modal-bg { position:fixed; inset:0; background:rgba(15,23,42,.5); backdrop-filter:blur(6px); z-index:200; display:flex; align-items:center; justify-content:center; padding:14px; }
 .sp-modal    { background:white; border-radius:18px; width:100%; max-width:390px; overflow:hidden; box-shadow:0 26px 72px rgba(0,0,0,.2); }
 .sp-modal-head { background:linear-gradient(135deg,#1e3a8a,#1d4ed8,#2563eb); padding:18px; position:relative; overflow:hidden; }
@@ -1000,7 +1326,6 @@ const CSS = `
 .sp-modal-head h2 { color:white; font-size:15px; font-weight:800; }
 .sp-modal-head p  { color:rgba(255,255,255,.65); font-size:11px; margin-top:2px; }
 .sp-modal-body { padding:18px; display:flex; flex-direction:column; gap:10px; }
-
 .sp-field label { display:block; font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:3px; }
 .sp-finput { position:relative; }
 .sp-ficon  { position:absolute; left:9px; top:50%; transform:translateY(-50%); font-size:12px; }
@@ -1013,15 +1338,12 @@ const CSS = `
 .sp-btn-cancel { flex:1; padding:9px; border-radius:9px; border:none; background:#f1f5f9; color:#64748b; font-weight:700; font-size:12px; cursor:pointer; }
 .sp-btn-ok     { flex:2; padding:9px; border-radius:9px; border:none; background:linear-gradient(135deg,#1e3a8a,#1d4ed8); color:white; font-weight:700; font-size:12px; cursor:pointer; box-shadow:0 3px 11px rgba(29,78,216,.28); }
 .sp-btn-ok:disabled { opacity:.6; cursor:not-allowed; }
-
 .sp-code-box  { background:#eff6ff; border:2px solid rgba(29,78,216,.2); border-radius:11px; padding:15px; text-align:center; }
 .sp-code-lbl  { font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.08em; margin-bottom:7px; }
 .sp-code-val  { font-size:30px; font-weight:800; color:#1d4ed8; letter-spacing:.2em; font-family:monospace; margin-bottom:9px; }
 .sp-code-warn { font-size:10px; color:#d97706; font-weight:600; }
 .sp-btn-copy  { width:100%; padding:8px; border-radius:9px; border:1.5px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; font-weight:700; font-size:12px; cursor:pointer; margin-bottom:4px; }
 .sp-btn-copy:hover { background:#dbeafe; }
-
-/* TOAST */
 .sp-toast     { position:fixed; bottom:16px; right:16px; z-index:999; background:#1d4ed8; color:white; border-radius:10px; padding:10px 14px; font-size:12px; font-weight:600; box-shadow:0 7px 24px rgba(29,78,216,.38); transform:translateY(60px); opacity:0; transition:all .38s cubic-bezier(.4,0,.2,1); }
 .sp-toast.show { transform:none; opacity:1; }
 .sp-toast-err  { background:#9f1239; box-shadow:0 7px 24px rgba(159,18,57,.38); }

@@ -12,6 +12,8 @@ import FrequentPartnersPage from "./pages/FrequentPartnersPage";
 import SupervisorsPage from "./pages/SupervisorsPage";
 import RecentTransactionsPage from "./pages/Recenttransactionspage";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AccountTypeTotals from "./pages/AccountTypeTotals";
+import CumulAnalytics from "./pages/CumulAnalytics";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +35,8 @@ const App = () => (
             <Route path="/dash-supervi" element={<Superviseur />} />
             <Route path="/transactions" element={<RecentTransactionsPage />} />
             <Route path="/account-types" element={<AccountTypes />} />
+            <Route path="/dashboard/totaux" element={<AccountTypeTotals />} />
+            <Route path="admin/cumul" element={<CumulAnalytics/>} />
           </Route>
 
 

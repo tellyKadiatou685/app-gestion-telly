@@ -1,45 +1,61 @@
-// src/services/AccountTypeService.ts
 import api from '@/config';
 import type {
   AccountTypesConfig,
   AccountTypeValue,
+  AccountTypeOption,
+  CustomSlot,
   GetAccountTypesResponse,
   ToggleAccountTypeResponse,
-  UpdateAutresLabelResponse,
+  AddCustomSlotResponse,
+  RenameCustomSlotResponse,
+  RemoveCustomSlotResponse,
   SetAccountTypesResponse,
   SetAccountTypesPayload,
 } from '@/types/accountType.types';
 
 const BASE = '/accountype';
 
+/** Labels statiques pour les types fixes (fallback sans API) */
+const FIXED_LABELS: Record<string, string> = {
+  LIQUIDE:       'Liquide',
+  ORANGE_MONEY:  'Orange Money',
+  WAVE:          'Wave',
+  UV_MASTER:     'UV Master',
+  FREE_MONEY:    'Free Money',
+  WESTERN_UNION: 'Western Union',
+  RIA:           'Ria',
+  MONEYGRAM:     'MoneyGram',
+  WESTERN_2:     'Western Union 2', // ← NOUVEAU
+  RIA_2:         'Ria 2',           // ← NOUVEAU
+};
+
+const FIXED_TYPES = Object.keys(FIXED_LABELS) as AccountTypeValue[];
+
+/** Valeurs possibles pour l'accès saisie superviseur */
+export type EntryAccess = 'both' | 'debut_only' | 'fin_only';
+
+export const ENTRY_ACCESS_LABELS: Record<EntryAccess, string> = {
+  both:       'Début + Fin',
+  debut_only: 'Début uniquement',
+  fin_only:   'Fin uniquement',
+};
+
 const AccountTypeService = {
 
   // ─── LECTURE ────────────────────────────────────────────────────────────────
 
-  /**
-   * Récupère toute la config (liste complète + options actives + autresLabel)
-   * Utilisé par : page admin gestion des types ET formulaire transaction
-   */
   async getConfig(): Promise<AccountTypesConfig> {
     const res = await api.get<GetAccountTypesResponse>(BASE);
     return res.data.data;
   },
 
-  /**
-   * Retourne uniquement les options actives pour un <select>
-   * Raccourci pratique pour les formulaires
-   */
-  async getActiveOptions() {
+  async getActiveOptions(): Promise<AccountTypeOption[]> {
     const config = await AccountTypeService.getConfig();
     return config.activeOptions;
   },
 
-  // ─── TOGGLE ─────────────────────────────────────────────────────────────────
+  // ─── TOGGLE ACTIF / INACTIF ──────────────────────────────────────────────────
 
-  /**
-   * Active ou désactive un type de compte
-   * PATCH /api/accountype/:type/toggle
-   */
   async toggle(type: AccountTypeValue, isActive: boolean) {
     const res = await api.patch<ToggleAccountTypeResponse>(
       `${BASE}/${type}/toggle`,
@@ -48,55 +64,78 @@ const AccountTypeService = {
     return res.data.data;
   },
 
-  // ─── LABEL AUTRES ────────────────────────────────────────────────────────────
+  // ─── ACCÈS SAISIE SUPERVISEUR ────────────────────────────────────────────────
 
-  /**
-   * Met à jour le nom personnalisé du type "AUTRES"
-   * PATCH /api/accountype/AUTRES/label
-   */
-  async updateAutresLabel(label: string) {
-    const res = await api.patch<UpdateAutresLabelResponse>(
-      `${BASE}/AUTRES/label`,
+  async setEntryAccess(type: AccountTypeValue, access: EntryAccess) {
+    const res = await api.patch(
+      `${BASE}/${type}/entry-access`,
+      { access }
+    );
+    return res.data.data;
+  },
+
+  // ─── SLOTS CUSTOM (AUTRES_*) ─────────────────────────────────────────────────
+
+  async addCustomSlot(label: string) {
+    const res = await api.post<AddCustomSlotResponse>(
+      `${BASE}/custom`,
       { label }
     );
     return res.data.data;
   },
 
-  // ─── RECONFIGURATION COMPLÈTE ────────────────────────────────────────────────
+  async renameCustomSlot(slotId: string, label: string) {
+    const res = await api.patch<RenameCustomSlotResponse>(
+      `${BASE}/custom/${slotId}`,
+      { label }
+    );
+    return res.data.data;
+  },
 
-  /**
-   * Remplace toute la liste active en une fois
-   * POST /api/accountype
-   */
+  async removeCustomSlot(slotId: string) {
+    const res = await api.delete<RemoveCustomSlotResponse>(
+      `${BASE}/custom/${slotId}`
+    );
+    return res.data.data;
+  },
+
+  // ─── RECONFIGURATION GLOBALE ─────────────────────────────────────────────────
+
   async setActiveTypes(payload: SetAccountTypesPayload) {
     const res = await api.post<SetAccountTypesResponse>(BASE, payload);
     return res.data.data;
   },
 
-  // ─── HELPERS LOCAUX ──────────────────────────────────────────────────────────
+  // ─── TYPE VEDETTE ─────────────────────────────────────────────────────────────
 
-  /** Label statique sans appel API (fallback) */
-  getStaticLabel(type: AccountTypeValue): string {
-    const labels: Record<AccountTypeValue, string> = {
-      LIQUIDE:       'Liquide',
-      ORANGE_MONEY:  'Orange Money',
-      WAVE:          'Wave',
-      UV_MASTER:     'UV Master',
-      FREE_MONEY:    'Free Money',
-      WESTERN_UNION: 'Western Union',
-      RIA:           'Ria',
-      MONEYGRAM:     'MoneyGram',
-      AUTRES:        'Autres',
-    };
-    return labels[type] ?? type;
+  async setFeaturedType(type: AccountTypeValue): Promise<{ featuredType: string; label: string }> {
+    const res = await api.patch(`${BASE}/${type}/featured`);
+    return res.data.data;
   },
 
-  /** Tous les types possibles (sans appel API) */
-  getAllTypes(): AccountTypeValue[] {
-    return [
-      'LIQUIDE', 'ORANGE_MONEY', 'WAVE', 'UV_MASTER',
-      'FREE_MONEY', 'WESTERN_UNION', 'RIA', 'MONEYGRAM', 'AUTRES'
-    ];
+  // ─── HELPERS LOCAUX (sans appel API) ─────────────────────────────────────────
+
+  getStaticLabel(type: AccountTypeValue): string {
+    return FIXED_LABELS[type] ?? type;
+  },
+
+  isCustomSlot(type: AccountTypeValue): boolean {
+    return String(type).startsWith('AUTRES_');
+  },
+
+  getFixedTypes(): AccountTypeValue[] {
+    return [...FIXED_TYPES];
+  },
+
+  resolveLabel(type: AccountTypeValue, customSlots: CustomSlot[]): string {
+    if (AccountTypeService.isCustomSlot(type)) {
+      return customSlots.find(s => s.id === type)?.label ?? type;
+    }
+    return FIXED_LABELS[type] ?? type;
+  },
+
+  getEntryAccessLabel(access: EntryAccess): string {
+    return ENTRY_ACCESS_LABELS[access] ?? access;
   },
 };
 

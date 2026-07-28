@@ -1,11 +1,13 @@
 // src/config.ts
 import axios from "axios";
 
+// ✅ Utilisez l'URL correcte de votre backend sur Vercel
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? "https://app-tellytech.vercel.app/api",
+  baseURL: import.meta.env.VITE_API_URL ?? "https://koula-backend.vercel.app/api",
+  // Pour le développement local: "http://localhost:4000/api"
 });
 
-// ✅ Ajoute automatiquement le token JWT à chaque requête
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {

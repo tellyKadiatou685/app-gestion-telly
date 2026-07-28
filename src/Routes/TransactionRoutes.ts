@@ -37,6 +37,13 @@ const transactionRoutes = {
       params,
     }),
 
+  /** Export Excel du dashboard admin (génère un fichier .xlsx côté serveur) */
+  exportAdminDashboard: (params?: GetDashboardParams) =>
+    api.get("/transactions/dashboard/admin/export", {
+      params,
+      responseType: "blob",
+    }),
+
   /** Dashboard superviseur spécifique */
   getSupervisorDashboard: (supervisorId?: string, params?: GetDashboardParams) =>
     api.get<ApiResponse<DashboardResponse>>(

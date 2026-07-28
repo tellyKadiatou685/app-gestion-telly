@@ -26,31 +26,31 @@ const PERIODS: { key: Period; label: string }[] = [
 
 const TX_TYPES: { key: TransactionType | ''; label: string; icon: string; color: string }[] = [
   { key: '',                     label: 'Tous',          icon: '📋', color: '#64748b' },
-  { key: 'DEPOT',                label: 'Dépôts',        icon: '↓',  color: '#10b981' },
-  { key: 'RETRAIT',              label: 'Retraits',      icon: '↑',  color: '#f59e0b' },
-  { key: 'TRANSFERT_ENVOYE',     label: 'Transferts',    icon: '→',  color: '#3b82f6' },
-  { key: 'ALLOCATION_UV_MASTER', label: 'Allocations',   icon: '⭐', color: '#8b5cf6' },
-  { key: 'DEBUT_JOURNEE',        label: 'Début journée', icon: '🌅', color: '#0d9488' },
+  { key: 'DEPOT',                label: 'Dépôts',        icon: '↓',  color: '#2563eb' },
+  { key: 'RETRAIT',              label: 'Retraits',      icon: '↑',  color: '#7c3aed' },
+  { key: 'TRANSFERT_ENVOYE',     label: 'Transferts',    icon: '→',  color: '#0891b2' },
+  { key: 'ALLOCATION_UV_MASTER', label: 'Allocations',   icon: '⭐', color: '#4f46e5' },
+  { key: 'DEBUT_JOURNEE',        label: 'Début journée', icon: '🌅', color: '#0369a1' },
   { key: 'FIN_JOURNEE',          label: 'Fin journée',   icon: '🌇', color: '#475569' },
 ];
 
 const ACCOUNT_META: Record<string, { color: string; icon: string; short: string }> = {
-  LIQUIDE:       { color: '#10b981', icon: '💵', short: 'LIQ' },
-  WAVE:          { color: '#3b82f6', icon: '🌊', short: 'WAV' },
-  ORANGE_MONEY:  { color: '#f97316', icon: '🟠', short: 'OM'  },
-  UV_MASTER:     { color: '#8b5cf6', icon: '💎', short: 'UVM' },
-  FREE_MONEY:    { color: '#ec4899', icon: '💳', short: 'FM'  },
-  WESTERN_UNION: { color: '#eab308', icon: '🏦', short: 'WU'  },
-  RIA:           { color: '#06b6d4', icon: '💱', short: 'RIA' },
-  MONEYGRAM:     { color: '#f43f5e', icon: '💸', short: 'MG'  },
+  LIQUIDE:       { color: '#2563eb', icon: '💵', short: 'LIQ' },
+  WAVE:          { color: '#0891b2', icon: '🌊', short: 'WAV' },
+  ORANGE_MONEY:  { color: '#4f46e5', icon: '🔷', short: 'OM'  },
+  UV_MASTER:     { color: '#7c3aed', icon: '💎', short: 'UVM' },
+  FREE_MONEY:    { color: '#1d4ed8', icon: '💳', short: 'FM'  },
+  WESTERN_UNION: { color: '#0369a1', icon: '🏦', short: 'WU'  },
+  RIA:           { color: '#0284c7', icon: '💱', short: 'RIA' },
+  MONEYGRAM:     { color: '#6366f1', icon: '💸', short: 'MG'  },
   AUTRES:        { color: '#64748b', icon: '📦', short: 'AUT' },
 };
 
 const TYPE_STYLE: Record<string, { bg: string; text: string; border: string }> = {
-  success:   { bg: '#f0fdf4', text: '#15803d', border: '#86efac' },
-  warning:   { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
-  info:      { bg: '#eff6ff', text: '#1d4ed8', border: '#93c5fd' },
-  primary:   { bg: '#faf5ff', text: '#7c3aed', border: '#c4b5fd' },
+  success:   { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
+  warning:   { bg: '#f5f3ff', text: '#6d28d9', border: '#ddd6fe' },
+  info:      { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd' },
+  primary:   { bg: '#eef2ff', text: '#4338ca', border: '#c7d2fe' },
   secondary: { bg: '#f8fafc', text: '#475569', border: '#e2e8f0' },
   default:   { bg: '#f8fafc', text: '#475569', border: '#e2e8f0' },
 };
@@ -61,15 +61,33 @@ function fmt(n: number) { return Math.abs(n).toLocaleString('fr-FR'); }
 function getAcctMeta(key: string) { return ACCOUNT_META[key] ?? { color: '#64748b', icon: '💳', short: key?.slice(0, 3) ?? '?' }; }
 function initials(name: string) { return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(); }
 
+/** Parse date safely — accepte ISO string ou tout ce que Date() comprend */
+function parseDate(raw: string | undefined | null): Date | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDateTime(raw: string | undefined | null, opts: Intl.DateTimeFormatOptions): string {
+  const d = parseDate(raw);
+  return d ? d.toLocaleDateString('fr-FR', opts) : '—';
+}
+
+function fmtTime(raw: string | undefined | null, opts: Intl.DateTimeFormatOptions): string {
+  const d = parseDate(raw);
+  return d ? d.toLocaleTimeString('fr-FR', opts) : '—';
+}
+
 const AVATAR_PALETTES = [
   { bg: '#dbeafe', text: '#1e40af' },
-  { bg: '#d1fae5', text: '#065f46' },
+  { bg: '#e0e7ff', text: '#3730a3' },
   { bg: '#ede9fe', text: '#5b21b6' },
-  { bg: '#fce7f3', text: '#9d174d' },
-  { bg: '#fef3c7', text: '#92400e' },
-  { bg: '#f0fdfa', text: '#0f766e' },
-  { bg: '#fee2e2', text: '#991b1b' },
+  { bg: '#e0f2fe', text: '#0c4a6e' },
+  { bg: '#f0f9ff', text: '#0369a1' },
+  { bg: '#eef2ff', text: '#4338ca' },
+  { bg: '#f5f3ff', text: '#6d28d9' },
 ];
+
 function avatarColor(name: string) {
   let h = 0; for (const c of name) h = name.charCodeAt(0) + ((h << 5) - h);
   return AVATAR_PALETTES[Math.abs(h) % AVATAR_PALETTES.length];
@@ -78,8 +96,10 @@ function avatarColor(name: string) {
 function groupByDate(transactions: RecentTransaction[]): { date: string; items: RecentTransaction[] }[] {
   const map = new Map<string, RecentTransaction[]>();
   for (const tx of transactions) {
-    const d = new Date(tx.dateHeure);
-    const key = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const d = parseDate(tx.dateHeure);
+    const key = d
+      ? d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      : 'Date inconnue';
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(tx);
   }
@@ -143,11 +163,11 @@ function TxRow({ tx, onClick }: { tx: RecentTransaction; onClick: () => void }) 
     <div className="tx-row" onClick={onClick}>
       {/* Timeline dot */}
       <div className="tx-timeline-dot" style={{
-        background: isMuted ? '#e2e8f0' : (isCredit ? '#10b981' : '#f59e0b'),
-        boxShadow:  isMuted ? 'none' : `0 0 0 3px ${isCredit ? '#d1fae5' : '#fef3c7'}`,
+        background: isMuted ? '#e2e8f0' : (isCredit ? '#2563eb' : '#7c3aed'),
+        boxShadow:  isMuted ? 'none' : `0 0 0 3px ${isCredit ? '#dbeafe' : '#ede9fe'}`,
       }} />
 
-      {/* Avatar — caché sur très petit écran */}
+      {/* Avatar */}
       <div className="tx-avatar-wrap">
         <MiniAvatar name={interv?.nom ?? '?'} size={36} />
       </div>
@@ -157,8 +177,8 @@ function TxRow({ tx, onClick }: { tx: RecentTransaction; onClick: () => void }) 
         <div className="tx-name-row">
           <span className="tx-who">{interv?.nom ?? '—'}</span>
           <span className="tx-role-pill" style={{
-            background: interv?.role === 'SUPERVISEUR' ? '#f0fdfa' : '#f5f3ff',
-            color:      interv?.role === 'SUPERVISEUR' ? '#0f766e' : '#7c3aed',
+            background: interv?.role === 'SUPERVISEUR' ? '#e0f2fe' : '#ede9fe',
+            color:      interv?.role === 'SUPERVISEUR' ? '#0369a1' : '#6d28d9',
           }}>
             {interv?.role ?? ''}
           </span>
@@ -182,7 +202,7 @@ function TxRow({ tx, onClick }: { tx: RecentTransaction; onClick: () => void }) 
       {/* Montant + heure */}
       <div className="tx-right">
         {!isMuted && (
-          <div className="tx-montant" style={{ color: isCredit ? '#10b981' : '#f59e0b' }}>
+          <div className="tx-montant" style={{ color: isCredit ? '#1d4ed8' : '#7c3aed' }}>
             <span className="tx-signe">{tx.montant.signe}</span>
             {fmt(tx.montant.valeur)}
             <span className="tx-devise"> F</span>
@@ -190,7 +210,7 @@ function TxRow({ tx, onClick }: { tx: RecentTransaction; onClick: () => void }) 
         )}
         <div className="tx-time">{tx.timeAgo}</div>
         <div className="tx-hour">
-          {new Date(tx.dateHeure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+          {fmtTime(tx.dateHeure, { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
     </div>
@@ -206,14 +226,14 @@ function TxDetailModal({ tx, onClose }: { tx: RecentTransaction; onClose: () => 
     ? tx.superviseur.nom : String(tx.superviseur ?? '—');
   const acct = getAcctMeta(tx.compte);
 
+  const gradientHead = isCredit
+    ? 'linear-gradient(135deg,#1e3a8a,#1d4ed8)'
+    : 'linear-gradient(135deg,#3b0764,#7c3aed)';
+
   return (
     <div className="modal-overlay visible" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-box">
-        <div className="modal-head" style={{
-          background: isCredit
-            ? 'linear-gradient(135deg,#065f46,#0d9488)'
-            : 'linear-gradient(135deg,#92400e,#f59e0b)',
-        }}>
+        <div className="modal-head" style={{ background: gradientHead }}>
           <button className="modal-close-btn" onClick={onClose}>×</button>
           <div className="modal-head-icon">{isCredit ? '↓' : '↑'}</div>
           <div className="modal-head-title">{tx.type.label}</div>
@@ -228,11 +248,11 @@ function TxDetailModal({ tx, onClose }: { tx: RecentTransaction; onClose: () => 
           <div className="detail-row">
             <span className="detail-label">📅 Date &amp; heure</span>
             <span className="detail-value">
-              {new Date(tx.dateHeure).toLocaleDateString('fr-FR', {
+              {fmtDateTime(tx.dateHeure, {
                 weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
               })}
               {' à '}
-              {new Date(tx.dateHeure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {fmtTime(tx.dateHeure, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           </div>
 
@@ -286,7 +306,7 @@ function TxDetailModal({ tx, onClose }: { tx: RecentTransaction; onClose: () => 
           {!['DEBUT_JOURNEE', 'FIN_JOURNEE'].includes(tx.type.key) && (
             <div className="detail-row">
               <span className="detail-label">💰 Montant</span>
-              <div className="detail-amount" style={{ color: isCredit ? '#10b981' : '#f59e0b' }}>
+              <div className="detail-amount" style={{ color: isCredit ? '#1d4ed8' : '#7c3aed' }}>
                 {tx.montant.signe}{fmt(tx.montant.valeur)} {tx.montant.devise}
               </div>
             </div>
@@ -397,7 +417,6 @@ export default function RecentTransactionsPage() {
             <div className="rt-hero-deco" />
             <div className="rt-hero-row">
               <div className="rt-hero-left">
-                {/* Hamburger mobile — classes Tailwind directes, pas de CSS custom */}
                 <button
                   className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 mt-0.5 cursor-pointer transition-colors"
                   style={{ background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.25)' }}
@@ -420,11 +439,11 @@ export default function RecentTransactionsPage() {
             {/* Stats */}
             {stats && (
               <div className="stats-row">
-                <StatCard icon="📋" label="Total"     value={fmt(stats.total)}                                    color="#0d9488" bg="#f0fdfa" />
-                <StatCard icon="↓"  label="Dépôts"    value={fmt(stats.depots)}   sub={fmt(stats.montantEntrees) + ' F'} color="#10b981" bg="#f0fdf4" />
-                <StatCard icon="↑"  label="Retraits"  value={fmt(stats.retraits)} sub={fmt(stats.montantSorties) + ' F'} color="#f59e0b" bg="#fffbeb" />
-                <StatCard icon="→"  label="Transferts" value={fmt(stats.transferts)}                              color="#3b82f6" bg="#eff6ff" />
-                <StatCard icon="💰" label="Volume"    value={fmt(stats.montantTotal) + ' F'}                     color="#8b5cf6" bg="#faf5ff" />
+                <StatCard icon="📋" label="Total"      value={fmt(stats.total)}                                          color="#1d4ed8" bg="#eff6ff" />
+                <StatCard icon="↓"  label="Dépôts"     value={fmt(stats.depots)}    sub={fmt(stats.montantEntrees) + ' F'} color="#2563eb" bg="#dbeafe" />
+                <StatCard icon="↑"  label="Retraits"   value={fmt(stats.retraits)}  sub={fmt(stats.montantSorties) + ' F'} color="#7c3aed" bg="#ede9fe" />
+                <StatCard icon="→"  label="Transferts" value={fmt(stats.transferts)}                                      color="#0891b2" bg="#e0f2fe" />
+                <StatCard icon="💰" label="Volume"     value={fmt(stats.montantTotal) + ' F'}                            color="#4f46e5" bg="#eef2ff" />
               </div>
             )}
           </div>
@@ -559,15 +578,18 @@ const CSS = `
   .rt-shell { display:flex; min-height:100vh; background:#f8fafc; }
   .rt-main  { flex:1; display:flex; flex-direction:column; overflow-x:hidden; min-width:0; }
 
-  /* HERO */
+  /* HERO — palette bleue */
   .rt-hero {
-    background: linear-gradient(135deg,#0f4c47 0%,#0f766e 40%,#0d9488 75%,#14b8a6 100%);
+    background: linear-gradient(135deg,#0f172a 0%,#1e3a8a 40%,#1d4ed8 75%,#3b82f6 100%);
     padding: 20px 16px 18px;
     position: relative; overflow: hidden;
   }
   @media (min-width:640px) { .rt-hero { padding: 28px 32px 24px; } }
 
-  .rt-hero-deco { position:absolute; top:-80px; right:-60px; width:300px; height:300px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
+  .rt-hero-deco {
+    position:absolute; top:-80px; right:-60px; width:300px; height:300px;
+    border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none;
+  }
 
   .rt-hero-row {
     display:flex; align-items:flex-start; justify-content:space-between;
@@ -576,8 +598,6 @@ const CSS = `
   @media (min-width:640px) { .rt-hero-row { margin-bottom:22px; } }
 
   .rt-hero-left { display:flex; align-items:flex-start; gap:10px; min-width:0; }
-
-
 
   .rt-eyebrow { font-size:10px; font-weight:700; color:rgba(255,255,255,.55); text-transform:uppercase; letter-spacing:.1em; margin-bottom:3px; }
   .rt-title   { font-size:22px; font-weight:800; color:white; letter-spacing:-.03em; line-height:1; margin-bottom:3px; }
@@ -639,7 +659,7 @@ const CSS = `
     flex:1; min-width:0; transition:border .15s;
   }
   @media (min-width:640px) { .search-wrap { border-radius:12px; padding:0 12px; max-width:320px; } }
-  .search-wrap:focus-within { border-color:#0d9488; background:white; }
+  .search-wrap:focus-within { border-color:#2563eb; background:white; }
 
   .search-ico   { font-size:13px; color:#94a3b8; flex-shrink:0; }
   .search-input { border:none; background:transparent; outline:none; font-size:12px; color:#0f172a; padding:8px 0; flex:1; font-family:inherit; min-width:0; }
@@ -657,8 +677,11 @@ const CSS = `
     cursor:pointer; transition:all .15s; white-space:nowrap;
   }
   @media (min-width:640px) { .chip { font-size:11px; padding:6px 14px; } }
-  .chip:hover { border-color:#0d9488; color:#0d9488; }
-  .chip.active { background:#0d9488; color:white; border-color:#0d9488; box-shadow:0 2px 8px rgba(13,148,136,.3); }
+  .chip:hover { border-color:#2563eb; color:#2563eb; }
+  .chip.active {
+    background:#2563eb; color:white; border-color:#2563eb;
+    box-shadow:0 2px 8px rgba(37,99,235,.3);
+  }
 
   /* TYPE FILTERS */
   .type-filters {
@@ -685,7 +708,6 @@ const CSS = `
   .type-btn.active { font-weight:800; }
   .type-ico { font-size:12px; }
 
-  /* Cacher le texte label sur très petit écran pour les types */
   @media (max-width:400px) {
     .type-label { display:none; }
     .type-btn { padding:6px 8px; }
@@ -693,12 +715,12 @@ const CSS = `
 
   /* ERROR */
   .rt-error {
-    background:#fee2e2; border:1px solid #fca5a5; border-radius:12px;
-    padding:12px 16px; color:#9f1239; font-size:12px; font-weight:600;
+    background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px;
+    padding:12px 16px; color:#1e40af; font-size:12px; font-weight:600;
     margin:16px 12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   }
   @media (min-width:640px) { .rt-error { margin:20px 32px; font-size:13px; padding:13px 20px; } }
-  .retry-btn { border:none; background:none; color:#9f1239; font-weight:800; text-decoration:underline; cursor:pointer; font-size:11px; }
+  .retry-btn { border:none; background:none; color:#1d4ed8; font-weight:800; text-decoration:underline; cursor:pointer; font-size:11px; }
 
   /* EMPTY */
   .rt-empty      { text-align:center; padding:48px 16px; color:#94a3b8; }
@@ -722,7 +744,11 @@ const CSS = `
   .date-line  { flex:1; height:1px; background:#e8edf2; }
   .date-label { font-size:10px; font-weight:800; color:#64748b; white-space:nowrap; text-transform:capitalize; }
   @media (min-width:640px) { .date-label { font-size:11px; } }
-  .date-count { font-size:9px; font-weight:700; color:#94a3b8; background:#f1f5f9; border-radius:99px; padding:2px 7px; white-space:nowrap; }
+  .date-count {
+    font-size:9px; font-weight:700; color:#1d4ed8;
+    background:#eff6ff; border-radius:99px; padding:2px 7px;
+    border:1px solid #bfdbfe; white-space:nowrap;
+  }
   @media (min-width:640px) { .date-count { font-size:10px; padding:2px 8px; } }
 
   .tx-group-items {
@@ -742,13 +768,12 @@ const CSS = `
   }
   @media (min-width:640px) { .tx-row { gap:12px; padding:13px 16px; } }
   .tx-row:last-child { border-bottom:none; }
-  .tx-row:hover { background:#fafcff; }
+  .tx-row:hover { background:#f8fbff; }
   @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
 
   .tx-timeline-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; transition:all .2s; }
   @media (min-width:640px) { .tx-timeline-dot { width:10px; height:10px; } }
 
-  /* Avatar masqué sur tout petit écran */
   .tx-avatar-wrap { display:none; }
   @media (min-width:420px) { .tx-avatar-wrap { display:block; flex-shrink:0; } }
 
@@ -798,26 +823,32 @@ const CSS = `
   .load-more-wrap { text-align:center; padding:16px 0; }
   @media (min-width:640px) { .load-more-wrap { padding:20px 0; } }
   .btn-load-more {
-    background:white; border:1.5px solid #e2e8f0; border-radius:11px;
-    padding:10px 22px; font-size:12px; font-weight:700; color:#64748b;
+    background:white; border:1.5px solid #bfdbfe; border-radius:11px;
+    padding:10px 22px; font-size:12px; font-weight:700; color:#1d4ed8;
     cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition:all .18s;
   }
   @media (min-width:640px) { .btn-load-more { border-radius:12px; padding:11px 28px; font-size:13px; } }
-  .btn-load-more:hover:not(:disabled) { border-color:#0d9488; color:#0d9488; background:#f0fdfa; }
-  .spinner { width:13px; height:13px; border:2px solid #e2e8f0; border-top-color:#0d9488; border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
+  .btn-load-more:hover:not(:disabled) { border-color:#2563eb; background:#eff6ff; }
+  .spinner { width:13px; height:13px; border:2px solid #bfdbfe; border-top-color:#2563eb; border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
   @keyframes spin { to{transform:rotate(360deg)} }
 
   .end-marker { display:flex; align-items:center; gap:10px; padding:16px 0 0; color:#94a3b8; font-size:11px; font-weight:600; }
 
   /* MODAL */
-  .modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,.5); backdrop-filter:blur(5px); z-index:200; display:flex; align-items:flex-end; justify-content:center; padding:0; opacity:0; pointer-events:none; transition:opacity .25s; }
+  .modal-overlay {
+    position:fixed; inset:0; background:rgba(15,23,42,.5);
+    backdrop-filter:blur(5px); z-index:200;
+    display:flex; align-items:flex-end; justify-content:center;
+    padding:0; opacity:0; pointer-events:none; transition:opacity .25s;
+  }
   @media (min-width:640px) { .modal-overlay { align-items:center; padding:16px; } }
   .modal-overlay.visible { opacity:1; pointer-events:auto; }
 
   .modal-box {
     background:white; border-radius:20px 20px 0 0;
     width:100%; max-height:90vh; overflow-y:auto;
-    box-shadow:0 28px 80px rgba(0,0,0,.22); animation:slideUp .3s cubic-bezier(.4,0,.2,1);
+    box-shadow:0 28px 80px rgba(0,0,0,.22);
+    animation:slideUp .3s cubic-bezier(.4,0,.2,1);
   }
   @media (min-width:640px) {
     .modal-box { border-radius:24px; max-width:460px; max-height:85vh; animation:scaleIn .3s cubic-bezier(.4,0,.2,1); }
@@ -828,9 +859,15 @@ const CSS = `
   .modal-head { padding:24px 20px 18px; position:relative; overflow:hidden; text-align:center; }
   @media (min-width:640px) { .modal-head { padding:28px 24px 22px; } }
   .modal-head::before { content:''; position:absolute; top:-40px; right:-40px; width:140px; height:140px; border-radius:50%; background:rgba(255,255,255,.08); }
-  .modal-close-btn { position:absolute; top:14px; right:14px; width:30px; height:30px; border-radius:50%; background:rgba(255,255,255,.18); border:none; color:white; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:1; }
+  .modal-close-btn {
+    position:absolute; top:14px; right:14px; width:30px; height:30px;
+    border-radius:50%; background:rgba(255,255,255,.18); border:none;
+    color:white; font-size:18px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; z-index:1;
+  }
   @media (min-width:640px) { .modal-close-btn { top:16px; right:16px; width:32px; height:32px; } }
   .modal-close-btn:hover { background:rgba(255,255,255,.3); }
+
   .modal-head-icon   { width:46px; height:46px; background:rgba(255,255,255,.2); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:800; color:white; margin:0 auto 8px; }
   .modal-head-title  { font-size:15px; font-weight:800; color:white; }
   .modal-head-amount { font-size:24px; font-weight:800; color:white; margin-top:5px; letter-spacing:-.02em; }
@@ -849,7 +886,15 @@ const CSS = `
   .detail-amount { font-size:16px; font-weight:800; }
   @media (min-width:640px) { .detail-amount { font-size:18px; } }
   .detail-status { font-size:10px; font-weight:800; padding:3px 10px; border-radius:99px; }
-  .status-ok     { background:#d1fae5; color:#065f46; }
-  .status-pending{ background:#fef3c7; color:#92400e; }
-  .archived-banner { background:#f1f5f9; border-radius:10px; padding:10px 14px; font-size:12px; color:#475569; font-weight:600; text-align:center; margin-top:8px; }
+
+  /* Statuts — palette bleue */
+  .status-ok      { background:#dbeafe; color:#1e40af; }
+  .status-pending { background:#ede9fe; color:#5b21b6; }
+
+  .archived-banner {
+    background:#eff6ff; border-radius:10px; padding:10px 14px;
+    font-size:12px; color:#1d4ed8; font-weight:600;
+    text-align:center; margin-top:8px;
+    border:1px solid #bfdbfe;
+  }
 `;

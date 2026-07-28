@@ -12,7 +12,7 @@ const menuItems = [
   { label: "Nos partenaires",    icon: UserCheck,       path: "/partners"      },
   { label: "Transactions",       icon: Users,           path: "/transactions"  },
   { label: "Nos superviseurs",   icon: AlertCircle,     path: "/sup"           },
-  { label: "Compte global",      icon: CreditCard,      path: "/dashboard"     },
+  { label: "Compte global",      icon: CreditCard,      path: "/dashboard/totaux"     },
   { label: "Types de Compte",    icon: Settings2,       path: "/account-types" },
 ];
 

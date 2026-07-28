@@ -1,7 +1,10 @@
-// src/services/Authservice.ts
+// src/services/AuthService.ts
 import userRoutes, {
   User,
   UpdateProfilePayload,
+  UpdateUserPayload,
+  UpdateUserResponse,
+  DeleteUserResponse,
   UserCodeResponse,
   RegenerateCodeResponse,
 } from "@/Routes/Userroutes";
@@ -44,35 +47,54 @@ const AuthService = {
 
   // ─── GESTION UTILISATEURS (ADMIN) ────────────────────────────────────────────
 
-  // ✅ Activer un compte → PATCH /:userId/activate → data: updatedUser
+  async updateUser(userId: string, payload: UpdateUserPayload): Promise<UpdateUserResponse> {
+    const { data } = await userRoutes.updateUser(userId, payload);
+    return data.data!;
+  },
+
+  async deleteUser(userId: string, reason?: string): Promise<DeleteUserResponse> {
+    const { data } = await userRoutes.deleteUser(userId, reason);
+    return data.data!;
+  },
+
   async activateUser(userId: string): Promise<void> {
     await userRoutes.activateUser(userId);
   },
 
-  // 🚫 Suspendre un compte → PATCH /:userId/suspend → data: updatedUser
   async suspendUser(userId: string): Promise<void> {
     await userRoutes.suspendUser(userId);
   },
 
-  // 🔑 GET /:userId/code → { success, data: { user, codeAcces } }
   async getUserCode(userId: string): Promise<UserCodeResponse> {
     const { data } = await userRoutes.getUserCode(userId);
-    // Backend retourne data.codeAcces (champ codeClair en BDD)
+    const raw = data.data as any;
+    return { userId, codeClair: raw?.codeAcces ?? null };
+  },
+
+  async regenerateUserCode(userId: string): Promise<RegenerateCodeResponse> {
+    const { data } = await userRoutes.regenerateUserCode(userId);
+    const raw = data.data as any;
     return {
       userId,
-      codeClair: data.data.codeAcces ?? null,
+      nomComplet: raw?.user?.nomComplet ?? "",
+      codeAcces:  raw?.nouveauCode ?? "",
     };
   },
 
-  // 🔄 POST /:userId/regenerate-code → { success, data: { user, nouveauCode } }
-  async regenerateUserCode(userId: string): Promise<RegenerateCodeResponse> {
-    const { data } = await userRoutes.regenerateUserCode(userId);
-    return {
-      userId,
-      nomComplet: data.data.user?.nomComplet ?? "",
-      // Backend retourne "nouveauCode", pas "codeAcces"
-      codeAcces:  data.data.nouveauCode,
-    };
+  // ─── PHOTO — conversion File → base64 puis updateUser ────────────────────────
+  async uploadUserPhoto(userId: string, file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = async () => {
+        try {
+          const base64 = reader.result as string;
+          await userRoutes.updateUser(userId, { photo: base64 });
+          resolve(base64);
+        } catch (e) { reject(e); }
+      };
+      reader.onerror = () => reject(new Error("Lecture du fichier échouée"));
+      reader.readAsDataURL(file);
+    });
   },
 
   // ─── UTILITAIRES ─────────────────────────────────────────────────────────────

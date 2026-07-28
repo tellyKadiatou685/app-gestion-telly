@@ -7,9 +7,10 @@ import {
   Phone, X, AlertTriangle, Check, Copy, Eye, EyeOff,
   ChevronRight, Sparkles, ArrowRight, Search, Plus,
   ChevronLeft, Filter, Star, Repeat,
-  ArrowUpCircle, ArrowDownCircle, BadgeCheck, ShieldOff,
+  ArrowUpCircle, ArrowDownCircle,
   MapPin, Calendar, List, KeyRound, RotateCcw,
   ToggleLeft, ToggleRight, Wand2, History, Menu,
+  BadgeCheck, ShieldOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import TransactionService from "@/services/TransactionService";
 import AuthService from "@/services/Authservice";
 import PartnerBalanceService from "@/services/PartnerBalanceService";
 import { PartnerTransactionHistory } from "@/components/PartnerTransactionHistory";
+import PartnerListCard from "@/components/PartnerListCard";
 import userRoutes from "@/Routes/Userroutes";
 import type {
   FrequentFreePartner,
@@ -190,7 +192,7 @@ const ConvertModal = ({
         <div className="px-5 sm:px-6 py-4 sm:py-5 border-b border-border bg-primary/5">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <div className={`h-10 w-10 sm:h-11 sm:w-11 rounded-xl ${color.bg} ${color.text} font-bold text-sm flex items-center justify-center flex-shrink-0`}>
+              <div className={`h-10 w-10 sm:h-11 sm:w-11 rounded-xl ${color.bg} font-bold text-sm flex items-center justify-center flex-shrink-0`}>
                 {getInitials(partner.partenaireNom)}
               </div>
               <div className="min-w-0">
@@ -382,317 +384,6 @@ const FrequentCard = ({
   );
 };
 
-// ─── CARD PARTENAIRE ENREGISTRÉ ───────────────────────────────────────────────
-
-const PartnerListCard = ({
-  partner, onStatusChange,
-}: {
-  partner:        User;
-  onStatusChange: (userId: string, newStatus: "ACTIVE" | "SUSPENDED") => void;
-}) => {
-  const { toast } = useToast();
-  const color    = avatarColor(partner.nomComplet);
-  const isActive = partner.status === "ACTIVE";
-  const joinDate = new Date(partner.createdAt ?? "").toLocaleDateString("fr-FR", {
-    day: "2-digit", month: "short", year: "numeric",
-  });
-
-  const [balance,     setBalance]     = useState<PartnerBalance | null>(null);
-  const [loadingBal,  setLoadingBal]  = useState(true);
-  const [errorBal,    setErrorBal]    = useState(false);
-  const [code,        setCode]        = useState<string | null>(null);
-  const [codeVisible, setCodeVisible] = useState(false);
-  const [loadingCode, setLoadingCode] = useState(false);
-  const [codeCopied,  setCodeCopied]  = useState(false);
-  const [toggling,    setToggling]    = useState(false);
-  const [regenModal,   setRegenModal]   = useState(false);
-  const [regenLoading, setRegenLoading] = useState(false);
-  const [regenCode,    setRegenCode]    = useState<string | null>(null);
-  const [regenVisible, setRegenVisible] = useState(true);
-  const [regenCopied,  setRegenCopied]  = useState(false);
-  const [showHistory,  setShowHistory]  = useState(false);
-
-  useEffect(() => {
-    const load = async () => {
-      setLoadingBal(true); setErrorBal(false);
-      try {
-        const data = await PartnerBalanceService.getPartnerBalance(partner.id);
-        setBalance(data);
-      } catch { setErrorBal(true); }
-      finally { setLoadingBal(false); }
-    };
-    load();
-  }, [partner.id]);
-
-  const fetchCode = async () => {
-    if (code !== null) { setCodeVisible(v => !v); return; }
-    setLoadingCode(true);
-    try {
-      const result = await AuthService.getUserCode(partner.id);
-      setCode(result.codeClair ?? "—");
-      setCodeVisible(true);
-    } catch (e: any) {
-      toast({ title: "Erreur", description: e?.response?.data?.message || "Impossible de récupérer le code", variant: "destructive" });
-    } finally { setLoadingCode(false); }
-  };
-
-  const copyCode = (c: string) => {
-    navigator.clipboard.writeText(c);
-    setCodeCopied(true);
-    toast({ title: "✅ Code copié !" });
-    setTimeout(() => setCodeCopied(false), 2000);
-  };
-
-  const handleToggleStatus = async () => {
-    setToggling(true);
-    try {
-      if (isActive) {
-        await AuthService.suspendUser(partner.id);
-        onStatusChange(partner.id, "SUSPENDED");
-        toast({ title: "⏸ Partenaire suspendu", description: partner.nomComplet });
-      } else {
-        await AuthService.activateUser(partner.id);
-        onStatusChange(partner.id, "ACTIVE");
-        toast({ title: "✅ Partenaire activé", description: partner.nomComplet });
-      }
-    } catch (e: any) {
-      toast({ title: "Erreur", description: e?.response?.data?.message || "Impossible de modifier le statut", variant: "destructive" });
-    } finally { setToggling(false); }
-  };
-
-  const handleRegen = async () => {
-    setRegenLoading(true);
-    try {
-      const result = await AuthService.regenerateUserCode(partner.id);
-      setRegenCode(result.codeAcces);
-      setCode(result.codeAcces);
-      setRegenVisible(true);
-    } catch (e: any) {
-      toast({ title: "Erreur", description: e?.response?.data?.message || "Impossible de regénérer", variant: "destructive" });
-    } finally { setRegenLoading(false); }
-  };
-
-  const copyRegen = () => {
-    if (!regenCode) return;
-    navigator.clipboard.writeText(regenCode);
-    setRegenCopied(true);
-    toast({ title: "✅ Nouveau code copié !" });
-    setTimeout(() => setRegenCopied(false), 2000);
-  };
-
-  return (
-    <>
-      {/* ── Modal confirmation regénération ── */}
-      {regenModal && !regenCode && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:px-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => setRegenModal(false)} />
-          <div className="relative bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm overflow-hidden border border-amber-300/50 p-5 sm:p-6 space-y-4">
-            <div className="w-12 h-1 bg-muted rounded-full mx-auto mb-2 sm:hidden" />
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
-                <RotateCcw className="h-5 w-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="font-bold text-foreground">Regénérer le code ?</p>
-                <p className="text-xs text-muted-foreground">L'ancien code sera <strong>invalidé</strong>.</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <p className="text-xs leading-relaxed">
-                <strong>{partner.nomComplet}</strong> ne pourra plus se connecter avec l'ancien code.
-                Le nouveau sera affiché <strong>une seule fois</strong>.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setRegenModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-border text-muted-foreground hover:bg-muted transition-colors">
-                Annuler
-              </button>
-              <button onClick={handleRegen} disabled={regenLoading}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center gap-2 transition-all disabled:opacity-60">
-                {regenLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                Confirmer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal nouveau code ── */}
-      {regenCode && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:px-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-[3px]" />
-          <div className="relative bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm overflow-hidden border border-amber-300/50 p-5 sm:p-6 space-y-4">
-            <div className="w-12 h-1 bg-muted rounded-full mx-auto mb-2 sm:hidden" />
-            <div className="text-center mb-1">
-              <div className="h-12 w-12 rounded-2xl bg-amber-500 flex items-center justify-center mx-auto mb-3">
-                <KeyRound className="h-6 w-6 text-white" />
-              </div>
-              <p className="font-bold text-foreground">Nouveau code généré</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{partner.nomComplet}</p>
-            </div>
-            <div className="flex items-center gap-2 p-3.5 rounded-xl bg-muted border border-border">
-              <code className="flex-1 text-lg font-mono font-bold text-foreground tracking-[0.3em]">
-                {regenVisible ? regenCode : "••••••"}
-              </code>
-              <button onClick={() => setRegenVisible(v => !v)} className="p-1.5 rounded-lg hover:bg-background transition-colors text-muted-foreground">
-                {regenVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-              <button onClick={copyRegen} className="p-1.5 rounded-lg hover:bg-background transition-colors text-muted-foreground">
-                {regenCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-              </button>
-            </div>
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700">
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <p className="text-xs font-medium leading-relaxed">Ce code ne sera <strong>jamais affiché à nouveau</strong>.</p>
-            </div>
-            <button onClick={() => { setRegenCode(null); setRegenModal(false); }}
-              className="w-full py-3 rounded-xl text-sm font-semibold bg-primary hover:bg-primary/90 text-primary-foreground transition-all">
-              J'ai noté le code — Fermer
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Historique via portal ── */}
-      {showHistory && createPortal(
-        <PartnerTransactionHistory
-          partnerId={partner.id}
-          partnerName={partner.nomComplet}
-          onClose={() => setShowHistory(false)}
-          fetchHistory={PartnerBalanceService.getPartnerHistory}
-        />,
-        document.body
-      )}
-
-      {/* ── Card ── */}
-      <div className="bg-card rounded-2xl border border-border hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden">
-        <div className={`h-0.5 w-full ${isActive
-          ? "bg-gradient-to-r from-emerald-400 to-teal-400"
-          : "bg-gradient-to-r from-rose-400 to-red-400"}`}
-        />
-        <div className="p-4 sm:p-5">
-
-          {/* Header */}
-          <div className="flex items-start gap-3 mb-4">
-            {partner.photo ? (
-              <img src={partner.photo} alt={partner.nomComplet}
-                className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl object-cover flex-shrink-0 border border-border" />
-            ) : (
-              <div className={`h-11 w-11 sm:h-12 sm:w-12 rounded-xl ${color.bg} ${color.text} font-bold text-sm flex items-center justify-center flex-shrink-0`}>
-                {getInitials(partner.nomComplet)}
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="font-bold text-foreground text-sm truncate">{partner.nomComplet}</p>
-                <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                  isActive ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                }`}>
-                  {isActive ? <><BadgeCheck className="h-3 w-3" />Actif</> : <><ShieldOff className="h-3 w-3" />Suspendu</>}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                <Phone className="h-3 w-3 flex-shrink-0" />{partner.telephone}
-              </p>
-              {!loadingBal && !errorBal && balance && (
-                <div className="mt-1.5">
-                  <SoldeBadge etat={balance.solde.etat} montantAbsolu={balance.solde.montantAbsolu} />
-                </div>
-              )}
-              {loadingBal && (
-                <div className="mt-1.5 flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">Solde...</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Infos */}
-          <div className="space-y-1.5 mb-4">
-            {partner.adresse && (
-              <div className="flex items-start gap-2">
-                <MapPin className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-muted-foreground leading-relaxed">{partner.adresse}</p>
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <p className="text-xs text-muted-foreground">
-                Depuis le <span className="font-semibold text-foreground">{joinDate}</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Solde */}
-          {loadingBal ? (
-            <div className="rounded-xl border border-border bg-muted/20 p-3 mb-3 flex items-center justify-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Calcul du solde...</span>
-            </div>
-          ) : errorBal ? (
-            <div className="rounded-xl border border-border bg-muted/20 p-3 mb-3 text-center">
-              <p className="text-xs text-muted-foreground">Solde indisponible</p>
-            </div>
-          ) : balance ? (
-            <SoldeBlock balance={balance} />
-          ) : null}
-
-          {/* Code */}
-          <div className="mb-3 rounded-xl border border-border bg-muted/30 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5">
-                <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Code d'accès</span>
-              </div>
-              <button onClick={() => setRegenModal(true)} className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground hover:text-amber-600 transition-colors">
-                <RotateCcw className="h-3 w-3" />Regénérer
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 text-sm font-mono font-bold text-foreground tracking-[0.25em]">
-                {codeVisible && code !== null ? code : "••••••"}
-              </code>
-              <button onClick={fetchCode} disabled={loadingCode}
-                className="p-1.5 rounded-lg hover:bg-background transition-colors text-muted-foreground disabled:opacity-50"
-                title={codeVisible ? "Masquer" : "Voir le code"}>
-                {loadingCode ? <Loader2 className="h-4 w-4 animate-spin" /> : codeVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-              {codeVisible && code !== null && (
-                <button onClick={() => copyCode(code)} className="p-1.5 rounded-lg hover:bg-background transition-colors text-muted-foreground" title="Copier le code">
-                  {codeCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Bouton historique */}
-          <button onClick={() => setShowHistory(true)}
-            className="w-full flex items-center justify-center gap-2 py-2.5 mb-2 rounded-xl text-sm font-semibold bg-muted/60 text-foreground hover:bg-muted border border-border transition-all">
-            <History className="h-4 w-4 text-primary" />
-            Historique des transactions
-          </button>
-
-          {/* Activer / suspendre */}
-          <button onClick={handleToggleStatus} disabled={toggling}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 ${
-              isActive
-                ? "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"
-                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-            }`}>
-            {toggling
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : isActive
-                ? <><ToggleLeft  className="h-4 w-4" />Suspendre le compte</>
-                : <><ToggleRight className="h-4 w-4" />Activer le compte</>}
-          </button>
-        </div>
-      </div>
-    </>
-  );
-};
-
 // ─── FORMULAIRE CRÉATION ──────────────────────────────────────────────────────
 
 const CreatePartnerForm = ({ onSuccess }: { onSuccess: (name: string, code: string) => void }) => {
@@ -868,6 +559,14 @@ const FrequentPartnersPage = () => {
     setRegPartners(prev => prev.map(p => p.id === userId ? { ...p, status: newStatus } : p));
   };
 
+  const handleUpdate = (userId: string, updated: Partial<User>) => {
+    setRegPartners(prev => prev.map(p => p.id === userId ? { ...p, ...updated } : p));
+  };
+
+  const handleDeletePartner = (userId: string) => {
+    setRegPartners(prev => prev.filter(p => p.id !== userId));
+  };
+
   const filteredReg = useMemo(() => {
     let list = [...regPartners];
     if (filterStatus !== "ALL") list = list.filter(p => p.status === filterStatus);
@@ -941,7 +640,6 @@ const FrequentPartnersPage = () => {
         {/* ── HEADER ── */}
         <div className="flex items-start justify-between mb-4 sm:mb-6 gap-2">
           <div className="flex items-start gap-2 sm:gap-3 min-w-0">
-            {/* Hamburger mobile */}
             <button
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 rounded-lg bg-card border border-input hover:bg-muted transition-colors flex-shrink-0 mt-0.5"
@@ -984,9 +682,9 @@ const FrequentPartnersPage = () => {
         {/* ── ONGLETS ── */}
         <div className="flex gap-1 p-1 bg-muted/50 rounded-xl mb-4 sm:mb-6 overflow-x-auto">
           {([
-            { key: "list",     icon: List,    label: "Enregistrés", count: regPartners.length, color: "bg-primary"   },
-            { key: "frequent", icon: Sparkles, label: "Fréquents",  count: partners.length,    color: "bg-amber-500" },
-            { key: "create",   icon: Plus,     label: "Créer",      count: null,               color: ""            },
+            { key: "list",     icon: List,     label: "Enregistrés", count: regPartners.length, color: "bg-primary"   },
+            { key: "frequent", icon: Sparkles, label: "Fréquents",   count: partners.length,    color: "bg-amber-500" },
+            { key: "create",   icon: Plus,     label: "Créer",       count: null,               color: ""            },
           ] as const).map(({ key, icon: Icon, label, count, color }) => (
             <button key={key} onClick={() => setTab(key)}
               className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all whitespace-nowrap flex-shrink-0 ${
@@ -1058,7 +756,13 @@ const FrequentPartnersPage = () => {
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-5 sm:mb-6">
                     {paginatedReg.map(p => (
-                      <PartnerListCard key={p.id} partner={p} onStatusChange={handleStatusChange} />
+                      <PartnerListCard
+                        key={p.id}
+                        partner={p}
+                        onStatusChange={handleStatusChange}
+                        onUpdate={handleUpdate}
+                        onDelete={handleDeletePartner}
+                      />
                     ))}
                   </div>
                   {totalPagesReg > 1 && (

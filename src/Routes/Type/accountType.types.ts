@@ -1,8 +1,9 @@
-// src/types/accountType.types.ts
+// ─── TYPES DE BASE ────────────────────────────────────────────────────────────
 
-// ─── ENUM ─────────────────────────────────────────────────────────────────────
+import { EntryAccess } from "@/services/AccountTypeService";
 
-export type AccountTypeValue =
+/** Types fixes (enum Prisma) */
+export type FixedAccountTypeValue =
   | 'LIQUIDE'
   | 'ORANGE_MONEY'
   | 'WAVE'
@@ -11,65 +12,77 @@ export type AccountTypeValue =
   | 'WESTERN_UNION'
   | 'RIA'
   | 'MONEYGRAM'
-  | 'AUTRES';
+  | 'WESTERN_2'   // ← NOUVEAU
+  | 'RIA_2';      // ← NOUVEAU
+
+export type AccountTypeValue = FixedAccountTypeValue | `AUTRES_${number}` | string;
 
 // ─── MODÈLES ──────────────────────────────────────────────────────────────────
 
-/** Un type de compte tel que retourné par l'API (page admin — liste complète) */
 export interface AccountTypeItem {
   value: AccountTypeValue;
-  label: string;           // ex: "Wave", "Tigo Cash" pour AUTRES
+  label: string;
   isActive: boolean;
-  canCustomizeLabel: boolean; // true seulement pour AUTRES
+  canCustomizeLabel: boolean;
+  isCustomSlot: boolean;
+  entryAccess: EntryAccess;
+  isFeatured: boolean;
 }
 
-/** Option simplifiée pour les <select> du formulaire transaction */
 export interface AccountTypeOption {
   value: AccountTypeValue;
   label: string;
 }
 
+export interface CustomSlot {
+  id: string;
+  label: string;
+}
+
+// ─── CONFIG GLOBALE ───────────────────────────────────────────────────────────
+
+export interface AccountTypesConfig {
+  allTypes: AccountTypeItem[];
+  activeTypes: AccountTypeValue[];
+  activeOptions: AccountTypeOption[];
+  customSlots: CustomSlot[];
+  entryAccess: Record<string, EntryAccess>;
+  featuredType: string;
+}
+
 // ─── RÉPONSES API ─────────────────────────────────────────────────────────────
 
-/** GET /api/accountype — réponse complète */
-export interface AccountTypesConfig {
-  allTypes: AccountTypeItem[];       // liste complète avec isActive (page admin)
-  activeTypes: AccountTypeValue[];   // ex: ['LIQUIDE', 'WAVE']
-  activeOptions: AccountTypeOption[]; // pour <select> transaction
-  autresLabel: string;               // label perso de AUTRES
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
 }
 
-export interface GetAccountTypesResponse {
-  success: boolean;
-  data: AccountTypesConfig;
-}
+export type GetAccountTypesResponse = ApiResponse<AccountTypesConfig>;
 
-/** PATCH /:type/toggle — réponse */
-export interface ToggleAccountTypeResponse {
-  success: boolean;
-  data: {
-    accountType: AccountTypeValue;
-    isActive: boolean;
-    activeTypes: AccountTypeValue[];
-  };
-}
+export type ToggleAccountTypeResponse = ApiResponse<{
+  accountType: AccountTypeValue;
+  isActive: boolean;
+  activeTypes: AccountTypeValue[];
+}>;
 
-/** PATCH /AUTRES/label — réponse */
-export interface UpdateAutresLabelResponse {
-  success: boolean;
-  data: {
-    autresLabel: string;
-  };
-}
+export type AddCustomSlotResponse = ApiResponse<{
+  slot: CustomSlot;
+  activeTypes: AccountTypeValue[];
+}>;
 
-/** POST / — reconfiguration complète */
-export interface SetAccountTypesResponse {
-  success: boolean;
-  data: {
-    activeTypes: AccountTypeValue[];
-    autresLabel: string;
-  };
-}
+export type RenameCustomSlotResponse = ApiResponse<{
+  slot: CustomSlot;
+}>;
+
+export type RemoveCustomSlotResponse = ApiResponse<{
+  slotId: string;
+  removedLabel: string;
+  activeTypes: AccountTypeValue[];
+}>;
+
+export type SetAccountTypesResponse = ApiResponse<{
+  activeTypes: AccountTypeValue[];
+}>;
 
 // ─── PAYLOADS ─────────────────────────────────────────────────────────────────
 
@@ -77,11 +90,14 @@ export interface ToggleAccountTypePayload {
   isActive: boolean;
 }
 
-export interface UpdateAutresLabelPayload {
+export interface AddCustomSlotPayload {
+  label: string;
+}
+
+export interface RenameCustomSlotPayload {
   label: string;
 }
 
 export interface SetAccountTypesPayload {
   types: AccountTypeValue[];
-  autresLabel?: string;
 }

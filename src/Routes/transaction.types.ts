@@ -24,6 +24,10 @@ export type AccountType =
   | "WESTERN_UNION"
   | "RIA"
   | "MONEYGRAM"
+  | "SEDDO"          // ← ajout
+  | "VERSEMENT_BANK"
+  | "WESTERN_2"       // ← NOUVEAU
+  | "RIA_2"           // ← NOUVEAU
   | "AUTRES";
 
 export type OperationType = "depot" | "retrait";
@@ -44,7 +48,7 @@ export interface Transaction {
   destinataireId?: string | null;
   partenaireId?: string | null;
   partenaireNom?: string | null;
-  telephoneLibre?: string | null;  // ← NOUVEAU
+  telephoneLibre?: string | null;
   archived?: boolean;
   archivedAt?: string | null;
   envoyeur?: Pick<User, "id" | "nomComplet" | "role"> | null;
@@ -71,8 +75,12 @@ export interface AccountTypeInfo {
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 
 export interface AccountsByType {
-  debut: Partial<Record<AccountType | string, number>>;
-  sortie: Partial<Record<AccountType | string, number>>;
+  debut:    Partial<Record<AccountType | string, number>>;
+  sortie:   Partial<Record<AccountType | string, number>>;
+  /** F2 persisté en base — peuplé uniquement si finSecondaire > 0 */
+  sortieF2?: Partial<Record<AccountType | string, number>>;
+  /** Différence F2 − F1, retournée par le backend */
+  diffF2F1?: Partial<Record<AccountType | string, number>>;
 }
 
 export interface SupervisorTotaux {
@@ -95,7 +103,14 @@ export interface SupervisorCard {
 }
 
 export interface GlobalTotals {
-  uvMaster: {
+  featured: {
+    type: string;
+    label: string;
+    solde: number;
+    sorties: number;
+    formatted: { solde: string; sorties: string };
+  };
+  uvMaster?: {
     solde: number;
     sorties: number;
     formatted: { solde: string; sorties: string };
@@ -118,6 +133,8 @@ export interface DynamicConfig {
   dataSource: "current_live" | "historical_snapshot" | "historical_after_reset" | "empty";
   snapshotDate?: string | null;
   cronStatus: string;
+  featuredType?: string;
+  featuredLabel?: string;
 }
 
 export interface AdminDashboard {
@@ -148,15 +165,29 @@ export interface UvMasterInfo {
   formatted: string;
 }
 
+export interface FeaturedInfo {
+  type: string;
+  label: string;
+  personal: { debut: number; sortie: number; formatted: string };
+  total: number;
+  formatted: string;
+}
+
 export interface SupervisorDashboard {
   superviseur: { id: string; nom: string; status: string };
   period: Period;
   customDate?: string | null;
-  uvMaster: UvMasterInfo;
+  /** Alias legacy — utiliser featured en priorité */
+  uvMaster?: UvMasterInfo;
+  /** Compte vedette dynamique (remplace uvMaster) */
+  featured?: FeaturedInfo;
   comptes: AccountsByType;
   totaux: SupervisorTotaux;
   recentTransactions: RecentTransaction[];
-  dynamicConfig: DynamicConfig & { totalTransactionsFound: number; partnerTransactionsFound: number };
+  dynamicConfig: DynamicConfig & {
+    totalTransactionsFound: number;
+    partnerTransactionsFound?: number;
+  };
 }
 
 export interface PartnerStatistiques {
@@ -194,7 +225,7 @@ export interface PartnerDashboard {
 
 export interface GetDashboardParams {
   period?: Period;
-  date?: string; // YYYY-MM-DD pour period=custom
+  date?: string;
 }
 
 export interface CreateAdminTransactionPayload {
@@ -202,12 +233,18 @@ export interface CreateAdminTransactionPayload {
   typeOperation: OperationType;
   montant: number;
   // Transactions journée
-  typeCompte?: AccountType;
+  typeCompte?: AccountType | string;
   // Transactions partenaire enregistré
   partenaireId?: string;
   // Transactions partenaire libre
   partenaireNom?: string;
-  telephoneLibre?: string;  // ← NOUVEAU : optionnel, partenaire libre seulement
+  telephoneLibre?: string;
+  /**
+   * F2 (fin prévue / fin secondaire) — envoyé uniquement pour typeOperation=retrait.
+   * Persisté en base via account.finSecondaire.
+   * null = effacer F2 existant.
+   */
+  finSecondaire?: number | null;
 }
 
 export interface CreateAdminTransactionResponse {
@@ -223,14 +260,18 @@ export interface CreateAdminTransactionResponse {
     partnerName: string | null;
     partnerId: string | null;
     partenaireNom: string | null;
-    telephoneLibre: string | null;  // ← NOUVEAU
+    telephoneLibre: string | null;
     isRegisteredPartner: boolean;
     transactionCategory: TransactionCategory;
   };
   accountUpdated: boolean;
   soldeActuel?: number;
   soldeInitial?: number;
-  summary: {
+  /** F2 confirmé par le backend après persistance (null si non saisi) */
+  finSecondaire?: number | null;
+  /** Différence F2 − F1 retournée par le backend */
+  diffF2F1?: number | null;
+  summary?: {
     type: TransactionCategory;
     operation: OperationType;
     superviseur: string;
@@ -253,9 +294,8 @@ export interface UpdateSupervisorAccountPayload {
   newValue: number;
 }
 
-// ─── PARTENAIRES LIBRES FRÉQUENTS — NOUVEAU ──────────────────────────────────
+// ─── PARTENAIRES LIBRES FRÉQUENTS ────────────────────────────────────────────
 
-/** Un partenaire libre qui revient souvent (≥ minTransactions sur daysBack jours) */
 export interface FrequentFreePartner {
   partenaireNom: string;
   telephoneLibre: string | null;
@@ -264,14 +304,13 @@ export interface FrequentFreePartner {
   totalRetraits: number;
   derniereTransaction: string;
   superviseurIds: string[];
-  /** true seulement si telephoneLibre est renseigné */
   peutConvertir: boolean;
 }
 
 export interface FrequentFreePartnersParams {
   superviseurId?: string;
-  daysBack?: number;        // défaut : 3
-  minTransactions?: number; // défaut : 3
+  daysBack?: number;
+  minTransactions?: number;
 }
 
 export interface FrequentFreePartnersResponse {
@@ -279,13 +318,11 @@ export interface FrequentFreePartnersResponse {
   config: { daysBack: number; minTransactions: number };
 }
 
-/** Payload pour convertir un partenaire libre en vrai compte */
 export interface ConvertFreePartnerPayload {
   partenaireNom: string;
   telephoneLibre: string;
 }
 
-/** Réponse de la conversion — codeAcces affiché UNE seule fois */
 export interface ConvertFreePartnerResponse {
   user: {
     id: string;
@@ -295,7 +332,7 @@ export interface ConvertFreePartnerResponse {
     status: string;
     createdAt: string;
   };
-  codeAcces: string; // ⚠️ à afficher immédiatement, non récupérable ensuite
+  codeAcces: string;
 }
 
 // ─── RÉPONSES API ─────────────────────────────────────────────────────────────
@@ -308,7 +345,7 @@ export interface DashboardResponse {
 }
 
 export interface AvailableDate {
-  value: string; // YYYY-MM-DD
+  value: string;
   display: string;
   displayLong: string;
   hasSnapshots: boolean;

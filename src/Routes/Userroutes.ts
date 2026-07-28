@@ -17,6 +17,7 @@ export interface User {
   role:       "ADMIN" | "SUPERVISEUR" | "PARTENAIRE";
   status:     "ACTIVE" | "SUSPENDED" | "PENDING";
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface LoginResponse {
@@ -33,6 +34,25 @@ export interface UpdateProfilePayload {
   telephone?:  string;
   adresse?:    string | null;
   photo?:      string | null;
+}
+
+// ─── NOUVEAU : payload pour modifier un utilisateur (admin) ───────────────────
+export interface UpdateUserPayload {
+  nomComplet?: string;
+  telephone?:  string;
+  adresse?:    string | null;
+  photo?:      string | null;
+  role?:       "SUPERVISEUR" | "PARTENAIRE";
+  status?:     "ACTIVE" | "SUSPENDED";
+  code?:       string | null; // si fourni (≥ 4 chars) → rehasché côté backend
+}
+
+// ─── NOUVEAU : réponse de updateUser ──────────────────────────────────────────
+export interface UpdateUserResponse {
+  user:         User;
+  changements:  string[];
+  codeModifie:  boolean;
+  nouveauCode?: string; // présent uniquement si le code a été modifié
 }
 
 export interface CreateUserPayload {
@@ -52,10 +72,9 @@ export interface GetPartnersParams {
   showCodes?: boolean;
 }
 
-// ─── NOUVEAU : pour getAllUsers (superviseurs avec tous statuts) ───────────────
 export interface GetAllUsersParams {
   role?:      string;
-  status?:    string; // "ACTIVE" | "SUSPENDED" | "all" — string large exprès
+  status?:    string;
   search?:    string;
   page?:      number;
   limit?:     number;
@@ -73,7 +92,12 @@ export interface RegenerateCodeResponse {
   codeAcces:  string;
 }
 
-// ─── TYPE GÉNÉRIQUE RÉPONSE API ───────────────────────────────────────────────
+// ─── NOUVEAU : réponse de deleteUser ──────────────────────────────────────────
+export interface DeleteUserResponse {
+  message:     string;
+  deletedUser: Pick<User, "id" | "nomComplet" | "telephone" | "role">;
+}
+
 interface ApiResponse<T = any> {
   success: boolean;
   message?: string;
@@ -86,59 +110,63 @@ const userRoutes = {
 
   // ─── AUTH ──────────────────────────────────────────────────────────────────
 
-  // 🔐 POST /users/login
   login: (payload: LoginPayload) =>
     api.post<LoginResponse>("/users/login", payload),
 
-  // 🚪 POST /users/logout
   logout: () =>
     api.post("/users/logout"),
 
   // ─── PROFIL ────────────────────────────────────────────────────────────────
 
-  // 👤 GET /users/profile
   getProfile: () =>
     api.get("/users/profile"),
 
-  // ✏️ PATCH /users/profile — nom, téléphone, adresse, photo (pas code)
+  // PATCH /users/profile — nom, téléphone, adresse, photo (code exclu)
   updateProfile: (payload: UpdateProfilePayload) =>
     api.patch("/users/profile", payload),
 
   // ─── CRÉATION ──────────────────────────────────────────────────────────────
 
-  // ➕ POST /users/create — créer un utilisateur (admin)
   createUser: (payload: CreateUserPayload) =>
     api.post("/users/create", payload),
 
-  // ─── PARTENAIRES (inchangé — ne pas toucher) ───────────────────────────────
+  // ─── MODIFICATION (admin) ──────────────────────────────────────────────────
 
-  // 🤝 GET /users/partners — liste des partenaires (ACTIVE | SUSPENDED)
+  // PUT /users/:userId — modifier nomComplet, telephone, adresse, photo, role, status, code
+  updateUser: (userId: string, payload: UpdateUserPayload) =>
+    api.put<ApiResponse<UpdateUserResponse>>(`/users/${userId}`, payload),
+
+  // ─── SUPPRESSION (admin) ───────────────────────────────────────────────────
+
+  // DELETE /users/:userId — supprimer un utilisateur (solde doit être à zéro)
+  deleteUser: (userId: string, reason?: string) =>
+    api.delete<ApiResponse<DeleteUserResponse>>(`/users/${userId}`, {
+      data: reason ? { reason } : undefined,
+    }),
+
+  // ─── PARTENAIRES ───────────────────────────────────────────────────────────
+
   getPartners: (params?: GetPartnersParams) =>
     api.get("/users/partners", { params }),
 
   // ─── ADMIN — LISTE COMPLÈTE ────────────────────────────────────────────────
 
-  // 📋 GET /users/all — tous les utilisateurs avec filtre role + status (admin)
   getAllUsers: (params?: GetAllUsersParams) =>
     api.get("/users/all", { params }),
 
   // ─── ADMIN — CODES D'ACCÈS ─────────────────────────────────────────────────
 
-  // 🔑 GET /users/:userId/code — code clair (admin)
   getUserCode: (userId: string) =>
     api.get<ApiResponse<UserCodeResponse>>(`/users/${userId}/code`),
 
-  // 🔄 POST /users/:userId/regenerate-code — nouveau code (admin)
   regenerateUserCode: (userId: string) =>
     api.post<ApiResponse<RegenerateCodeResponse>>(`/users/${userId}/regenerate-code`),
 
   // ─── ADMIN — STATUTS ───────────────────────────────────────────────────────
 
-  // ✅ PATCH /users/:userId/activate — activer un compte (admin)
   activateUser: (userId: string) =>
     api.patch<ApiResponse>(`/users/${userId}/activate`),
 
-  // 🚫 PATCH /users/:userId/suspend — suspendre un compte (admin)
   suspendUser: (userId: string) =>
     api.patch<ApiResponse>(`/users/${userId}/suspend`),
 
